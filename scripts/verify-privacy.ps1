@@ -25,14 +25,23 @@ foreach ($pattern in $patterns) {
   foreach ($file in $files) { $violations.Add("tracked:$file") }
 }
 
-if (& git -C $root rev-parse --verify $BaseRef 2>$null) {
-  $history = (& git -C $root log -p --no-ext-diff "$BaseRef..HEAD" -- . 2>$null) -join "`n"
-  foreach ($pattern in $patterns) {
-    if ($history -match $pattern) { $violations.Add("history:$BaseRef..HEAD") }
-  }
+$baseRefName = if ($BaseRef.StartsWith("origin/", [System.StringComparison]::OrdinalIgnoreCase)) {
+  "refs/remotes/$BaseRef"
+} else {
+  $BaseRef
+}
+& git -C $root show-ref --verify --quiet $baseRefName
+if ($LASTEXITCODE -ne 0) {
+  throw "隐私扫描基准不存在：$BaseRef。CI 必须使用 fetch-depth: 0。"
 }
 
-$commitEmails = @(& git -C $root log --format=%ae "$BaseRef..HEAD" 2>$null | Where-Object { $_ })
+$historyRange = "$baseRefName..HEAD"
+$history = (& git -C $root log -p --no-ext-diff $historyRange -- . 2>$null) -join "`n"
+foreach ($pattern in $patterns) {
+  if ($history -match $pattern) { $violations.Add("history:$historyRange") }
+}
+
+$commitEmails = @(& git -C $root log --format=%ae $historyRange 2>$null | Where-Object { $_ })
 foreach ($email in $commitEmails) {
   if ($email -notmatch '@users\.noreply\.github\.com$') { $violations.Add("commit-email:non-noreply") }
 }
@@ -100,7 +109,7 @@ if ($unique.Count) {
 [pscustomobject]@{
   schema = "randdeck.privacy-scan.v1"
   source = "passed"
-  historyRange = "$BaseRef..HEAD"
+  historyRange = $historyRange
   commitEmails = "github-noreply-only"
   artifacts = if ($ArtifactRoot) { "passed" } else { "not-requested" }
 } | ConvertTo-Json
