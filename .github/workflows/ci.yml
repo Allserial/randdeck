@@ -28,7 +28,7 @@ jobs:
       - name: Verify localization resources
         run: npm run i18n:verify
       - name: Verify repository privacy
-        run: npm run privacy:verify
+        run: npm run privacy:verify -- -HeadRef "${{ github.event.pull_request.head.sha }}"
       - name: Validate icons
         run: npm run icons:verify
       - name: Lint

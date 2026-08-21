@@ -1,6 +1,7 @@
 ﻿param(
   [string]$ArtifactRoot = "",
-  [string]$BaseRef = "origin/main"
+  [string]$BaseRef = "origin/main",
+  [string]$HeadRef = "HEAD"
 )
 
 $ErrorActionPreference = "Stop"
@@ -35,7 +36,14 @@ if ($LASTEXITCODE -ne 0) {
   throw "隐私扫描基准不存在：$BaseRef。CI 必须使用 fetch-depth: 0。"
 }
 
-$historyRange = "$baseRefName..HEAD"
+$headCommitOutput = @(& git -C $root rev-parse --verify --quiet "${HeadRef}^{commit}" 2>$null)
+$headCommitExitCode = $LASTEXITCODE
+$headCommit = $headCommitOutput[0]
+if ($headCommitExitCode -ne 0 -or !$headCommit) {
+  throw "隐私扫描目标不存在：$HeadRef。"
+}
+
+$historyRange = "$baseRefName..$headCommit"
 $history = (& git -C $root log -p --no-ext-diff $historyRange -- . 2>$null) -join "`n"
 foreach ($pattern in $patterns) {
   if ($history -match $pattern) { $violations.Add("history:$historyRange") }
