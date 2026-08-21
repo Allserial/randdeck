@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256">
+  <rect x="10" y="10" width="236" height="236" rx="42" fill="#080D16"/>
+  <rect x="24" y="24" width="208" height="208" rx="34" fill="#0E1624" stroke="#30415A" stroke-width="5"/>
+  <rect data-role="candidate-token" x="48" y="48" width="54" height="54" rx="14" fill="#172235" stroke="#30415A" stroke-width="7"/>
+  <rect data-role="candidate-token" x="48" y="154" width="54" height="54" rx="14" fill="#172235" stroke="#30415A" stroke-width="7"/>
+  <path data-role="selector-spark" d="M166 43 L174 91 L213 99 L181 115 L188 158 L166 130 L144 158 L151 115 L119 99 L158 91 Z" fill="#B97931"/>
+  <path d="M166 58 L171 95 L199 100 L176 112 L181 143 L166 123 L151 143 L156 112 L133 100 L161 95 Z" fill="#F6D88F"/>
+  <rect data-role="candidate-token" x="137" y="73" width="58" height="58" rx="16" fill="#0E1624" stroke="#E8B85C" stroke-width="8"/>
+  <rect x="149" y="85" width="34" height="34" rx="9" fill="#172235" stroke="#F6D88F" stroke-opacity=".38" stroke-width="3"/>
+</svg>

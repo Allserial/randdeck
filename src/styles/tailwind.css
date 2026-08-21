@@ -1,0 +1,7 @@
+/* Tailwind v4 entry. After `npm install`, import this from index.css as:
+   @import "tailwindcss/theme.css" layer(theme);
+   @import "tailwindcss/utilities.css" layer(utilities);
+   Do not enable preflight; the workbench tokens live in index.css. */
+@layer utilities {
+  .tw-shell { display: flex; align-items: center; gap: 8px; }
+}

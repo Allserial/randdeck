@@ -1,0 +1,28 @@
+[package]
+name = "zhishutai"
+version = "0.5.0"
+description = "掷数台本地随机数工作台"
+authors = ["掷数台本地维护"]
+license = ""
+repository = ""
+edition = "2021"
+rust-version = "1.77.2"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[lib]
+name = "zhishutai_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2.6.3", features = [] }
+
+[dependencies]
+tauri = { version = "2.11.5", features = [] }
+tauri-plugin-dialog = "2.7.2"
+tauri-plugin-fs = "2.5.1"
+tauri-plugin-global-shortcut = "2.3.2"
+tauri-plugin-notification = "2.3.3"
+tauri-plugin-single-instance = "2.4.3"
+tauri-plugin-store = "2.4.4"
+tauri-plugin-window-state = "2.4.1"

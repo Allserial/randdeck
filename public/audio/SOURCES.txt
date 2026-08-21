@@ -1,0 +1,16 @@
+# 掷数台 (Zhishutai) 离线音频素材说明
+
+本项目所有音频素材均为本地离线生成与使用，遵循 CC0 1.0 Universal (CC0 1.0) 公共领域许可协议。
+
+## 音频文件清单
+1. countdown-drums.wav
+   - 描述：倒计时 4/4 拍激烈低音鼓点与节奏床 (120 BPM)
+   - 来源：基于标准 PCM WAV 本地离线合成 (CC0 Public Domain)
+   - 许可：CC0 1.0 Universal
+
+2. countdown-tick.wav
+   - 描述：倒计时整秒跳动清脆高频 tick 音
+   - 来源：基于标准 PCM WAV 本地离线合成 (CC0 Public Domain)
+   - 许可：CC0 1.0 Universal
+
+没有任何网络依赖，离线完全可用。
