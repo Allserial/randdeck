@@ -296,7 +296,8 @@ test("四种关键视口没有横向溢出，窄窗口设置面板具备文字�
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto("/");
   const narrowToggle = page.getByRole("button", { name: "打开抽取设置" });
-  if (await narrowToggle.isHidden()) await page.getByRole("button", { name: "关闭设置" }).click();
+  await expect(page.getByRole("heading", { name: "掷数台" })).toBeVisible();
+  await expect(narrowToggle).toBeVisible();
   await page.setViewportSize({ width: 1180, height: 820 });
   await expect(page.getByRole("button", { name: "生成结果" })).toBeVisible();
   await expect(page.locator("#draw-inspector-panel")).not.toHaveAttribute("aria-hidden", "true");
