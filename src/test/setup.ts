@@ -1,7 +1,12 @@
 import "@testing-library/jest-dom/vitest";
 import "fake-indexeddb/auto";
 import { cleanup } from "@testing-library/react";
-import { afterEach } from "vitest";
+import { afterEach, beforeAll } from "vitest";
+import { initializeI18n } from "../i18n";
+
+beforeAll(async () => {
+  await initializeI18n("zh-CN");
+});
 
 afterEach(() => cleanup());
 

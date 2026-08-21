@@ -1,5 +1,7 @@
 import { APP_VERSION } from "../app/version";
+import type { AppLocale } from "./types";
 import type { DrawSession, DrawTransaction, ReceiptPayload } from "./types";
+import { modeLabel } from "../lib/labels";
 
 export function canonicalize(value: unknown): string {
   if (value === null || typeof value !== "object") return JSON.stringify(value);
@@ -41,7 +43,7 @@ function roundedRect(context: CanvasRenderingContext2D, x: number, y: number, wi
   context.fill();
 }
 
-export async function renderReceiptPng(receipt: ReceiptPayload): Promise<Blob> {
+export async function renderReceiptPng(receipt: ReceiptPayload, locale: AppLocale = "zh-CN"): Promise<Blob> {
   const canvas = document.createElement("canvas");
   canvas.width = 1200;
   canvas.height = 675;
@@ -58,15 +60,21 @@ export async function renderReceiptPng(receipt: ReceiptPayload): Promise<Blob> {
 
   context.fillStyle = "#f0e6d6";
   context.font = '600 34px "Segoe UI Variable", "Segoe UI", sans-serif';
-  context.fillText("掷数台 · 抽取回执", 92, 100);
+  context.fillText(locale === "en-US" ? "RandDeck · Draw Receipt" : "掷数台 · 抽取回执", 92, 100);
 
   context.fillStyle = "#9ba3af";
   context.font = '18px "Segoe UI Variable", "Segoe UI", sans-serif';
-  context.fillText(new Date(receipt.createdAt).toLocaleString("zh-CN"), 92, 137);
+  context.fillText(new Date(receipt.createdAt).toLocaleString(locale), 92, 137);
 
   context.fillStyle = "#b5bec9";
   context.font = '16px "Segoe UI Variable", "Segoe UI", sans-serif';
-  context.fillText(`模式：${receipt.mode}    候选：${receipt.candidate.count}    算法：${receipt.algorithmVersion}`, 92, 190);
+  context.fillText(
+    locale === "en-US"
+      ? `Mode: ${modeLabel(receipt.mode, locale)}    Candidates: ${receipt.candidate.count.toLocaleString(locale)}    Algorithm: ${receipt.algorithmVersion}`
+      : `模式：${modeLabel(receipt.mode, locale)}    候选：${receipt.candidate.count.toLocaleString(locale)}    算法：${receipt.algorithmVersion}`,
+    92,
+    190,
+  );
 
   const values = receipt.results.map((result) => String(result.total)).join("  ·  ");
   let fontSize = values.length > 34 ? 46 : values.length > 18 ? 62 : 88;
@@ -88,20 +96,36 @@ export async function renderReceiptPng(receipt: ReceiptPayload): Promise<Blob> {
       : receipt.mode === "range"
         ? `${receipt.config.min}..${receipt.config.max}`
         : `${receipt.candidate.entries?.length ?? 0} 个条目`;
-  context.fillText(`来源：${source}    数量：${receipt.config.count}    抽后移除：${receipt.config.noDup ? "是" : "否"}`, 118, 450);
-  context.fillText(`排除：${receipt.config.excludeInput || "无"}    标签：${receipt.config.tagFilter.selectedTags.join("、") || "无"}`, 118, 482);
+  context.fillText(
+    locale === "en-US"
+      ? `Source: ${source}    Count: ${receipt.config.count.toLocaleString(locale)}    Remove after draw: ${receipt.config.noDup ? "Yes" : "No"}`
+      : `来源：${source}    数量：${receipt.config.count.toLocaleString(locale)}    抽后移除：${receipt.config.noDup ? "是" : "否"}`,
+    118,
+    450,
+  );
+  context.fillText(
+    locale === "en-US"
+      ? `Exclude: ${receipt.config.excludeInput || "None"}    Tags: ${receipt.config.tagFilter.selectedTags.join(", ") || "None"}`
+      : `排除：${receipt.config.excludeInput || "无"}    标签：${receipt.config.tagFilter.selectedTags.join("、") || "无"}`,
+    118,
+    482,
+  );
 
   context.fillStyle = "#7b8594";
   context.font = '14px "Cascadia Mono", Consolas, monospace';
   context.fillText(`SHA256 ${receipt.digest}`, 92, 575);
-  context.fillText(`掷数台 ${receipt.appVersion} · 完全离线生成`, 92, 605);
+  context.fillText(
+    locale === "en-US" ? `RandDeck ${receipt.appVersion} · Fully offline` : `掷数台 ${receipt.appVersion} · 完全离线生成`,
+    92,
+    605,
+  );
 
   return new Promise((resolve, reject) =>
     canvas.toBlob((blob) => (blob ? resolve(blob) : reject(new Error("PNG 编码失败"))), "image/png")
   );
 }
 
-export async function renderSessionSummaryPng(session: DrawSession, values: number[]): Promise<Blob> {
+export async function renderSessionSummaryPng(session: DrawSession, values: number[], locale: AppLocale = "zh-CN"): Promise<Blob> {
   const canvas = document.createElement("canvas");
   canvas.width = 1200;
   canvas.height = 675;
@@ -119,7 +143,13 @@ export async function renderSessionSummaryPng(session: DrawSession, values: numb
 
   context.fillStyle = "#9ba3af";
   context.font = '20px "Segoe UI Variable", "Segoe UI", sans-serif';
-  context.fillText(`${session.roundCount} 轮 · ${values.length} 个结果`, 100, 158);
+  context.fillText(
+    locale === "en-US"
+      ? `${session.roundCount.toLocaleString(locale)} rounds · ${values.length.toLocaleString(locale)} results`
+      : `${session.roundCount.toLocaleString(locale)} 轮 · ${values.length.toLocaleString(locale)} 个结果`,
+    100,
+    158,
+  );
 
   context.fillStyle = "#e8c36a";
   context.font = '700 54px "Cascadia Mono", Consolas, monospace';
@@ -129,8 +159,20 @@ export async function renderSessionSummaryPng(session: DrawSession, values: numb
 
   context.fillStyle = "#7b8594";
   context.font = '16px "Segoe UI Variable", "Segoe UI", sans-serif';
-  context.fillText(`开始：${new Date(session.startedAt).toLocaleString("zh-CN")}`, 100, 545);
-  context.fillText(`结束：${new Date(session.endedAt || Date.now()).toLocaleString("zh-CN")}`, 100, 575);
+  context.fillText(
+    locale === "en-US"
+      ? `Started: ${new Date(session.startedAt).toLocaleString(locale)}`
+      : `开始：${new Date(session.startedAt).toLocaleString(locale)}`,
+    100,
+    545,
+  );
+  context.fillText(
+    locale === "en-US"
+      ? `Ended: ${new Date(session.endedAt || Date.now()).toLocaleString(locale)}`
+      : `结束：${new Date(session.endedAt || Date.now()).toLocaleString(locale)}`,
+    100,
+    575,
+  );
 
   return new Promise((resolve, reject) =>
     canvas.toBlob((blob) => (blob ? resolve(blob) : reject(new Error("PNG 编码失败"))), "image/png")

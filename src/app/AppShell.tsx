@@ -1,36 +1,41 @@
 import { lazy, Suspense, useCallback, useEffect } from "react";
+import { useTranslation } from "react-i18next";
 import { AnimatePresence, motion } from "motion/react";
 import { BarChart3, Dices, PanelTopOpen, Settings, Volume2, VolumeX } from "lucide-react";
 import clsx from "clsx";
 import type { AppView } from "../domain/types";
 import { cancelCeremony, finishCeremonyToNormal, generateDraw, skipCeremonyReveal, startCountdownCeremony } from "./drawController";
 import { flushStore, useAppStore } from "./store";
-import { applyWindowMaterial, listenDisplayReady, openDisplayWindow } from "../platform/desktop";
+import { applyWindowMaterial, listenDisplayReady, openDisplayWindow, setApplicationWindowTitle } from "../platform/desktop";
 import { publishCurrentDisplay } from "./drawController";
 import { ErrorBoundary } from "../components/ui/ErrorBoundary";
 import { IconButton } from "../components/ui/Button";
 import BrandMark from "../components/BrandMark";
+import { translateRuntimeMessage } from "../i18n/messages";
 
 import RollWorkspace from "../features/roll/RollWorkspace";
 const InsightsView = lazy(() => import("../features/insights/InsightsView"));
 const SettingsView = lazy(() => import("../features/settings/SettingsView"));
 
-const views: Array<{ id: AppView; label: string; icon: typeof Dices }> = [
-  { id: "roll", label: "抽取台", icon: Dices },
-  { id: "insights", label: "数据洞察", icon: BarChart3 },
-  { id: "settings", label: "设置", icon: Settings },
+const views: Array<{ id: AppView; key: string; icon: typeof Dices }> = [
+  { id: "roll", key: "navigation.roll", icon: Dices },
+  { id: "insights", key: "navigation.insights", icon: BarChart3 },
+  { id: "settings", key: "navigation.settings", icon: Settings },
 ];
 
 function LoadingView() {
+  const { t } = useTranslation();
   return (
     <div className="view-loading" aria-live="polite">
       <span />
-      正在准备工作台
+      {t("app.preparing")}
     </div>
   );
 }
 
 export default function AppShell() {
+  const { t } = useTranslation();
+  const translate = t as unknown as (key: string) => string;
   const hydrated = useAppStore((state) => state.hydrated);
   const settings = useAppStore((state) => state.settings);
   const ui = useAppStore((state) => state.ui);
@@ -57,6 +62,11 @@ export default function AppShell() {
     document.documentElement.dataset.motion = settings.appearance.motion;
     void applyWindowMaterial(settings.appearance.theme);
   }, [settings.appearance.motion, settings.appearance.theme]);
+
+  useEffect(() => {
+    document.title = t("app.brand");
+    void setApplicationWindowTitle(ui.locale);
+  }, [t, ui.locale]);
 
   useEffect(() => {
     import("../platform/audio").then(({ syncMutedAudio }) => syncMutedAudio(settings.muted));
@@ -160,19 +170,19 @@ export default function AppShell() {
       <header className="app-header">
         <div className="app-brand">
           <span className="brand-glyph">
-            <BrandMark size={26} title="掷数台" />
+            <BrandMark size={26} title={t("app.about")} />
           </span>
           <div>
-            <h1>掷数台</h1>
-            <span>本地随机工作台</span>
+            <h1>{t("app.brand")}</h1>
+            <span>{t("app.localWorkspace")}</span>
           </div>
         </div>
         <div className="header-tools">
-          <IconButton label="打开展示窗口" onClick={() => void showDisplay()}>
+          <IconButton label={t("roll.display")} onClick={() => void showDisplay()}>
             <PanelTopOpen size={17} />
           </IconButton>
           <IconButton
-            label={settings.muted ? "开启音效" : "静音"}
+            label={settings.muted ? t("settings.unmute") : t("settings.mute")}
             onClick={() => updateSettings({ muted: !settings.muted })}
           >
             {settings.muted ? <VolumeX size={17} /> : <Volume2 size={17} />}
@@ -181,8 +191,8 @@ export default function AppShell() {
       </header>
 
       <div className="app-body">
-        <nav className="primary-nav" aria-label="主导航">
-          {views.map(({ id, label, icon: Icon }) => (
+        <nav className="primary-nav" aria-label={t("navigation.main")}>
+          {views.map(({ id, key, icon: Icon }) => (
             <button
               type="button"
               key={id}
@@ -194,7 +204,7 @@ export default function AppShell() {
               }}
             >
               <Icon size={18} />
-              <span>{label}</span>
+              <span>{translate(key)}</span>
             </button>
           ))}
         </nav>
@@ -205,7 +215,7 @@ export default function AppShell() {
               {warnings.join("；")}
             </div>
           )}
-          <ErrorBoundary name="当前工作区暂时不可用">
+          <ErrorBoundary name={t("app.workspaceUnavailable")}>
             <div
               className="workbench-home"
               hidden={ui.activeView !== "roll"}
@@ -238,7 +248,7 @@ export default function AppShell() {
       {/* 居中自消提示层 (Item 8) */}
       {(error || toast) && (
         <div className={clsx("bottom-notification", error ? "is-error" : "is-toast")} role="status">
-          <span>{error || toast}</span>
+          <span>{translateRuntimeMessage(error || toast, t)}</span>
         </div>
       )}
     </div>

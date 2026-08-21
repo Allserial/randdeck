@@ -3,8 +3,9 @@ import { executeDraw, prepareDraw, prepareShuffle } from "../domain/draw";
 import { WebCryptoRandomSource } from "../domain/random";
 import { playCountdownTick, playDrawSound, startCountdownDrums, stopCountdownDrums } from "../platform/audio";
 import { publishDisplayState } from "../platform/desktop";
-import { MODE_LABELS } from "../lib/labels";
+import { modeLabel } from "../lib/labels";
 import { snapshotState, useAppStore } from "./store";
+import i18n from "i18next";
 
 let activeGeneration: Promise<string | null> | null = null;
 let ceremonyCountdownTimer: number | undefined;
@@ -31,16 +32,16 @@ export async function publishCurrentDisplay(overrides: { hidden?: boolean } = {}
 
   if (ceremony.phase === "countdown") {
     results = [];
-    summary = `倒计时 ${ceremony.remainingSeconds} 秒`;
+    summary = i18n.t("roll.countdown", { seconds: ceremony.remainingSeconds });
   } else if (ceremony.phase === "revealing") {
     results = (ceremony.targetTransaction?.results || []).slice(0, ceremony.revealedCount);
-    summary = `正在揭晓 (${ceremony.revealedCount}/${ceremony.targetTransaction?.results.length || 0})`;
+    summary = i18n.t("roll.revealingStatus", { current: ceremony.revealedCount, total: ceremony.targetTransaction?.results.length || 0 });
   } else if (ceremony.phase === "finished") {
     results = ceremony.targetTransaction?.results || state.currentResults;
     summary = results.map((result) => result.total).join(", ");
   } else if (state.isDrawing || overrides.hidden) {
     results = [];
-    summary = "正在抽出…";
+    summary = i18n.t("roll.drawing");
   } else {
     results = state.currentResults;
     summary = results.map((result) => result.total).join(", ");
@@ -48,7 +49,9 @@ export async function publishCurrentDisplay(overrides: { hidden?: boolean } = {}
 
   await publishDisplayState({
     results,
-    mode: MODE_LABELS[state.settings.mode],
+    mode: modeLabel(state.settings.mode, state.ui.locale),
+    modeKey: state.settings.mode,
+    locale: state.ui.locale,
     summary,
     theme: state.settings.appearance.theme,
     animationToken:

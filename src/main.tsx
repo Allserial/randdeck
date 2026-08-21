@@ -4,6 +4,7 @@ import App from "./App";
 import DisplayView from "./features/display/DisplayView";
 import { initializeStore, useAppStore } from "./app/store";
 import { initializeI18n } from "./i18n";
+import i18n from "i18next";
 import "./styles/index.css";
 
 async function start() {
@@ -15,7 +16,7 @@ async function start() {
     await initializeI18n(useAppStore.getState().ui.locale);
     root.render(<StrictMode><App /></StrictMode>);
   }
-  catch (error) { root.render(<main className="fatal-start"><h1>掷数台无法启动</h1><p>{(error as Error).message}</p><button type="button" onClick={() => location.reload()}>重试</button></main>); }
+  catch (error) { root.render(<main className="fatal-start"><h1>{i18n.t("app.fatalStart")}</h1><p>{(error as Error).message}</p><button type="button" onClick={() => location.reload()}>{i18n.t("app.retry")}</button></main>); }
 }
 
 void start();

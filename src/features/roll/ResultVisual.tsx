@@ -1,4 +1,5 @@
 import { useEffect, useState, forwardRef } from "react";
+import { useTranslation } from "react-i18next";
 import clsx from "clsx";
 import { formatRollTrace } from "../../domain/dice";
 import { prepareDraw } from "../../domain/draw";
@@ -114,18 +115,13 @@ export const NumberCard = forwardRef<
   },
   ref
 ) {
+  const { t } = useTranslation();
+  const translate = t as unknown as (key: string) => string;
   const rollingVal = useRollingDisplay(isRolling, mode, cardIndex);
   const faces = result.faces?.length ? result.faces : [];
   const shownValue = hidden ? "?" : isRolling ? rollingVal : displayValue(result);
 
-  const modeBadge =
-    mode === "range"
-      ? "号牌"
-      : mode === "custom"
-        ? "自定义"
-        : mode === "weighted"
-          ? "加权（历史）"
-          : "骰面";
+  const modeBadge = translate(`roll.cardMode.${mode}`);
 
   return (
     <article
@@ -161,7 +157,7 @@ export const NumberCard = forwardRef<
       )}
 
       {mode === "expression" && Boolean(result.trace) && !hidden && !isRolling && (
-        <p className="tile-trace">骰面明细 {formatRollTrace(result.trace as never)}</p>
+        <p className="tile-trace">{t("roll.trace")} {formatRollTrace(result.trace as never)}</p>
       )}
 
       {/* 标签锁定固定单行高度，不撑大卡片外框 */}
@@ -179,13 +175,13 @@ export const NumberCard = forwardRef<
           <button
             type="button"
             className="tile-copy"
-            aria-label={`复制结果 ${displayValue(result)}`}
+            aria-label={t("roll.copyResult", { value: displayValue(result) })}
             onClick={(e) => {
               e.stopPropagation();
               onCopy();
             }}
           >
-            复制
+            {t("common.actions.copy")}
           </button>
         ) : (
           <span className="tile-copy-placeholder" aria-hidden="true" />

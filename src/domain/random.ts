@@ -74,8 +74,8 @@ export function parseExclusionInput(input: unknown): { tokens: ExclusionToken[];
       const range = raw.match(/^([+-]?\d+)\.\.([+-]?\d+)$/);
       if (range && Number.isSafeInteger(Number(range[1])) && Number.isSafeInteger(Number(range[2]))) {
         parsed = { raw, kind: "range", min: Math.min(Number(range[1]), Number(range[2])), max: Math.max(Number(range[1]), Number(range[2])) };
-      } else if (raw === "奇数") parsed = { raw, kind: "odd" };
-      else if (raw === "偶数") parsed = { raw, kind: "even" };
+      } else if (/^(奇数|odd)$/i.test(raw)) parsed = { raw, kind: "odd" };
+      else if (/^(偶数|even)$/i.test(raw)) parsed = { raw, kind: "even" };
     }
     if (!parsed) invalidTokens.push(raw);
     else {

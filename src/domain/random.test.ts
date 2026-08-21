@@ -18,6 +18,13 @@ describe("random domain", () => {
     expect(isExcluded(8, parsed.tokens)).toBe(true);
   });
 
+  it("accepts case-insensitive English odd/even keywords", () => {
+    const parsed = parseExclusionInput("ODD, even");
+    expect(parsed.invalidTokens).toEqual([]);
+    expect(isExcluded(3, parsed.tokens)).toBe(true);
+    expect(isExcluded(4, parsed.tokens)).toBe(true);
+  });
+
   it("deduplicates equivalent exclusion tokens", () => {
     expect(parseExclusionInput("3,3,1..4,1..4").tokens).toHaveLength(2);
   });

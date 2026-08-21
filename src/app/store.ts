@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import type { AppState, AppView, CeremonyState, CopyFormat, CountMemoryMode, DrawMode, DrawSession, DrawSettings, DrawTransaction, HistoryEntry, InsightsTab, PoolsState, SessionTransactionRecord } from "../domain/types";
+import type { AppLocale, AppState, AppView, CeremonyState, CopyFormat, CountMemoryMode, DrawMode, DrawSession, DrawSettings, DrawTransaction, HistoryEntry, InsightsTab, PoolsState, SessionTransactionRecord } from "../domain/types";
 import { applyStatsDelta, resetStats } from "../domain/stats";
 import { createId } from "../domain/random";
 import { createDefaultState, HISTORY_LIMIT, migrateToV5 } from "./state";
@@ -30,6 +30,7 @@ interface AppActions {
   updateSettings(updates: Partial<DrawSettings>): void;
   updatePools(updates: Partial<PoolsState>): void;
   setView(view: AppView): void;
+  setLocale(locale: AppLocale): void;
   setInspectorOpen(open: boolean): void;
   setInsightsTab(tab: InsightsTab): void;
   toggleCompare(id: string): void;
@@ -230,6 +231,10 @@ export const useAppStore = create<AppStore>((set, get) => ({
   setView(activeView) {
     set((state) => ({ ui: { ...state.ui, activeView }, revision: state.revision + 1 }));
     queuePersistence();
+  },
+  setLocale(locale) {
+    set((state) => ({ ui: { ...state.ui, locale }, revision: state.revision + 1 }));
+    queuePersistence(true);
   },
   setInspectorOpen(inspectorOpen) {
     set((state) => ({ ui: { ...state.ui, inspectorOpen }, revision: state.revision + 1 }));

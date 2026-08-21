@@ -1,4 +1,4 @@
-import type { CopyFormat, DrawMode, DrawResult, HistoryEntry } from "../domain/types";
+import type { AppLocale, CopyFormat, DrawMode, DrawResult, HistoryEntry } from "../domain/types";
 
 export const MODE_LABELS: Record<DrawMode, string> = {
   range: "范围",
@@ -6,6 +6,17 @@ export const MODE_LABELS: Record<DrawMode, string> = {
   weighted: "加权（历史）",
   expression: "骰子",
 };
+
+const MODE_LABELS_EN: Record<DrawMode, string> = {
+  range: "Range",
+  custom: "Custom",
+  weighted: "Weighted (legacy)",
+  expression: "Dice",
+};
+
+export function modeLabel(mode: DrawMode, locale: AppLocale = "zh-CN"): string {
+  return locale === "en-US" ? MODE_LABELS_EN[mode] : MODE_LABELS[mode];
+}
 
 export function displayValue(result: DrawResult): number {
   return result.total ?? result.value;

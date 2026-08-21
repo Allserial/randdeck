@@ -8,7 +8,7 @@ import { cancelCeremony } from "./app/drawController";
 beforeEach(() => {
   localStorage.clear();
   useAppStore.setState({
-    ...createDefaultState(),
+    ...createDefaultState("zh-CN"),
     hydrated: true,
     hydrationSource: "test",
     warnings: [],
@@ -41,7 +41,7 @@ describe("application shell", () => {
 
   it("uses the card brand mark and starts countdown with Shift+Space", async () => {
     render(<App />);
-    expect(screen.getByRole("img", { name: "掷数台" })).toBeVisible();
+    expect(screen.getByRole("img", { name: "RandDeck / 掷数台" })).toBeVisible();
     await screen.findByRole("heading", { name: /等待抽取|本次结果/ }, { timeout: 4000 });
 
     fireEvent.keyDown(window, { key: " ", code: "Space", shiftKey: true });
