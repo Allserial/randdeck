@@ -1,4 +1,4 @@
-import { Bar, BarChart, CartesianGrid, Legend, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
+import { Bar, BarChart, CartesianGrid, Legend, Line, LineChart, Tooltip, XAxis, YAxis } from "recharts";
 import { useTranslation } from "react-i18next";
 import type { ProbabilityReport } from "../../domain/types";
 import { formatLocaleNumber } from "../../i18n/messages";
@@ -31,15 +31,13 @@ export default function ChartsPanel({ frequency, trend, probability }: { frequen
         <div><span className="section-label">{t("charts.frequency")}</span><h3>{t("charts.occurrences")}</h3></div>
         <div className="chart-area">
           {frequency.length ? (
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={frequency.slice(0, 60)}>
+              <BarChart responsive style={{ width: "100%", height: "100%" }} data={frequency.slice(0, 60)}>
                 <CartesianGrid stroke="var(--border)" vertical={false} />
                 <XAxis dataKey="value" {...axisStyle} tickLine={false} />
                 <YAxis {...axisStyle} tickLine={false} />
                 <Tooltip contentStyle={tooltipStyle} />
                 <Bar dataKey="count" name={t("charts.actualCount")} fill="var(--accent)" radius={[3, 3, 0, 0]} />
               </BarChart>
-            </ResponsiveContainer>
           ) : <p className="empty-chart">{t("charts.noStats")}</p>}
         </div>
       </section>
@@ -47,15 +45,13 @@ export default function ChartsPanel({ frequency, trend, probability }: { frequen
         <div><span className="section-label">{t("charts.trend")}</span><h3>{t("charts.batchAverage")}</h3></div>
         <div className="chart-area">
           {trend.length ? (
-            <ResponsiveContainer width="100%" height="100%">
-              <LineChart data={trend}>
+              <LineChart responsive style={{ width: "100%", height: "100%" }} data={trend}>
                 <CartesianGrid stroke="var(--border)" vertical={false} />
                 <XAxis dataKey="batch" {...axisStyle} tickLine={false} />
                 <YAxis {...axisStyle} tickLine={false} />
                 <Tooltip contentStyle={tooltipStyle} />
                 <Line type="monotone" dataKey="average" name={t("charts.average")} stroke="var(--gold)" strokeWidth={2} dot={false} />
               </LineChart>
-            </ResponsiveContainer>
           ) : <p className="empty-chart">{t("charts.noTrend")}</p>}
         </div>
       </section>
@@ -63,8 +59,7 @@ export default function ChartsPanel({ frequency, trend, probability }: { frequen
         <section className="chart-panel chart-panel--wide">
           <div><span className="section-label">{t("charts.distribution")}</span><h3>{probability.method === "exact" ? t("insights.exactProbability") : t("insights.simulatedProbability", { count: formatLocaleNumber(probability.samples ?? 0, locale) })}</h3></div>
           <div className="chart-area">
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={probabilityData}>
+              <BarChart responsive style={{ width: "100%", height: "100%" }} data={probabilityData}>
                 <CartesianGrid stroke="var(--border)" vertical={false} />
                 <XAxis dataKey="value" {...axisStyle} tickLine={false} />
                 <YAxis {...axisStyle} tickLine={false} unit="%" />
@@ -72,7 +67,6 @@ export default function ChartsPanel({ frequency, trend, probability }: { frequen
                 <Legend />
                 <Bar dataKey="probability" name={t("charts.singleProbability")} fill="var(--info)" radius={[3, 3, 0, 0]} />
               </BarChart>
-            </ResponsiveContainer>
           </div>
         </section>
       )}
