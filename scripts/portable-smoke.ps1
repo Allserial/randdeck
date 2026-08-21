@@ -1,10 +1,10 @@
-param(
-  [string]$Version = "0.5.0"
+﻿param(
+  [string]$Version = "0.6.0"
 )
 
 $ErrorActionPreference = "Stop"
 $root = Split-Path -Parent $PSScriptRoot
-$source = (Resolve-Path -LiteralPath (Join-Path $root "releases\$Version\portable\掷数台.exe")).Path
+$source = (Resolve-Path -LiteralPath (Join-Path $root "releases\$Version\portable\RandDeck.exe")).Path
 $reportPath = Join-Path $root "reports\portable-smoke.json"
 $tempRoot = Join-Path $env:TEMP ("zhishutai-portable-smoke-" + [guid]::NewGuid().ToString("N"))
 New-Item -ItemType Directory -Path $tempRoot | Out-Null
@@ -14,7 +14,7 @@ try {
   foreach ($index in 1..2) {
     $runDir = Join-Path $tempRoot "run-$index"
     New-Item -ItemType Directory -Path $runDir | Out-Null
-    $target = Join-Path $runDir "掷数台.exe"
+    $target = Join-Path $runDir "RandDeck.exe"
     Copy-Item -LiteralPath $source -Destination $target
     $onlyExecutable = @(Get-ChildItem -LiteralPath $runDir -File).Count -eq 1
     $process = Start-Process -FilePath $target -WorkingDirectory $runDir -WindowStyle Hidden -PassThru
@@ -28,7 +28,7 @@ try {
   $report = [pscustomobject]@{
     schema = "zhishutai.portable-smoke.v1"
     generatedAt = (Get-Date).ToUniversalTime().ToString("o")
-    sourceFile = "releases\$Version\portable\掷数台.exe"
+    sourceFile = "releases\$Version\portable\RandDeck.exe"
     sha256 = (Get-FileHash -LiteralPath $source -Algorithm SHA256).Hash.ToLowerInvariant()
     runs = $runs
     passed = $true

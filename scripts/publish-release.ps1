@@ -1,5 +1,5 @@
-param(
-  [string]$Version = "0.5.0",
+﻿param(
+  [string]$Version = "0.6.0",
   [switch]$Force
 )
 
@@ -7,9 +7,18 @@ $ErrorActionPreference = "Stop"
 $root = Split-Path -Parent $PSScriptRoot
 $releaseBase = Join-Path $root "releases"
 $releaseRoot = Join-Path $releaseBase $Version
-$portableSource = Join-Path $root "src-tauri\target\release\zhishutai.exe"
+$portableSource = Join-Path $root "src-tauri\target\release\randdeck.exe"
 $nsisDir = Join-Path $root "src-tauri\target\release\bundle\nsis"
 $verificationPath = Join-Path $root "reports\v$Version-verification.json"
+
+function Get-SafeRelativePath([string]$BasePath, [string]$TargetPath) {
+  $baseFull = [System.IO.Path]::GetFullPath($BasePath).TrimEnd("\") + "\"
+  $targetFull = [System.IO.Path]::GetFullPath($TargetPath)
+  if (!$targetFull.StartsWith($baseFull, [System.StringComparison]::OrdinalIgnoreCase)) {
+    throw "相对路径目标越界：$targetFull"
+  }
+  return $targetFull.Substring($baseFull.Length)
+}
 
 if (!(Test-Path -LiteralPath $portableSource)) { throw "便携版构建文件不存在：$portableSource" }
 if (!(Test-Path -LiteralPath $nsisDir)) { throw "NSIS 构建目录不存在：$nsisDir" }
@@ -21,6 +30,18 @@ if (!$verification.passed) { throw "发布验证报告未通过，停止整理�
 
 $sourceCommit = ((& git -C $root rev-parse HEAD 2>$null) -join "").Trim()
 $branch = ((& git -C $root branch --show-current 2>$null) -join "").Trim()
+$package = Get-Content -Raw -LiteralPath (Join-Path $root "package.json") | ConvertFrom-Json
+$tauriConfig = Get-Content -Raw -LiteralPath (Join-Path $root "src-tauri\tauri.conf.json") | ConvertFrom-Json
+$cargoText = Get-Content -Raw -LiteralPath (Join-Path $root "src-tauri\Cargo.toml")
+$cargoVersionMatch = [regex]::Match($cargoText, '(?m)^version\s*=\s*"([^"]+)"')
+if ($branch -ne "main") { throw "正式发布只能从 main 分支生成，当前分支：$branch" }
+if ($verification.schema -ne "zhishutai.verification.v1") { throw "发布验证报告 schema 不兼容。" }
+if ([string]$verification.version -ne $Version) { throw "发布验证报告版本与目标版本不一致。" }
+if ([string]$verification.sourceCommit -ne $sourceCommit) { throw "发布验证报告不属于当前源码 commit。" }
+if ($verification.PSObject.Properties.Name -notcontains "sourceBranch" -or [string]$verification.sourceBranch -ne $branch) { throw "发布验证报告不属于当前分支。" }
+if ([string]$package.version -ne $Version -or [string]$tauriConfig.version -ne $Version -or !$cargoVersionMatch.Success -or $cargoVersionMatch.Groups[1].Value -ne $Version) {
+  throw "package.json、Cargo.toml、tauri.conf.json 与发布版本不一致。"
+}
 $statusBefore = ((& git -C $root status --porcelain --untracked-files=normal -- . ":(exclude)releases/$Version" 2>$null) -join "`n").Trim()
 if ($statusBefore) { throw "源码工作树不是干净状态，停止发布：`n$statusBefore" }
 
@@ -35,8 +56,8 @@ if (Test-Path -LiteralPath $releaseRoot) {
 $portableDir = Join-Path $releaseRoot "portable"
 $installerDir = Join-Path $releaseRoot "installer"
 New-Item -ItemType Directory -Path $portableDir, $installerDir -Force | Out-Null
-$portableTarget = Join-Path $portableDir "掷数台.exe"
-$installerTarget = Join-Path $installerDir "掷数台-离线安装版-setup.exe"
+$portableTarget = Join-Path $portableDir "RandDeck.exe"
+$installerTarget = Join-Path $installerDir "RandDeck-v$Version-offline-setup.exe"
 Copy-Item -LiteralPath $portableSource -Destination $portableTarget
 Copy-Item -LiteralPath $installerSource.FullName -Destination $installerTarget
 $signScript = Join-Path $PSScriptRoot "sign-release.ps1"
@@ -54,7 +75,7 @@ function Get-Artifact([string]$Path, [string]$Kind, [string]$WebView2Mode) {
   $item = Get-Item -LiteralPath $Path
   [pscustomobject]@{
     kind = $Kind
-    path = [System.IO.Path]::GetRelativePath($releaseRoot, $item.FullName)
+    path = Get-SafeRelativePath $releaseRoot $item.FullName
     fileName = $item.Name
     bytes = $item.Length
     sha256 = (Get-FileHash -LiteralPath $item.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
@@ -72,13 +93,12 @@ $installer = Get-Artifact $installerTarget "nsis-offline-installer" "offlineInst
 $portableMiB = [math]::Round($portable.bytes / 1MB, 2)
 if ($portable.bytes -gt 35MB) { throw "便携版为 $portableMiB MiB，超过 35 MiB 暂停线。" }
 
-$previousInstaller = Join-Path $releaseBase "0.4.0\installer\掷数台-离线安装版-setup.exe"
+$previousInstaller = Join-Path $releaseBase "0.5.0\installer\掷数台-离线安装版-setup.exe"
 $installerDeltaMiB = $null
 if (Test-Path -LiteralPath $previousInstaller) {
   $installerDeltaMiB = [math]::Round(($installer.bytes - (Get-Item -LiteralPath $previousInstaller).Length) / 1MB, 2)
 }
 
-$package = Get-Content -Raw -LiteralPath (Join-Path $root "package.json") | ConvertFrom-Json
 $directNames = @($package.dependencies.PSObject.Properties.Name) + @($package.devDependencies.PSObject.Properties.Name) | Sort-Object -Unique
 $npmDependencies = foreach ($name in $directNames) {
   $packagePath = Join-Path $root "node_modules\$name\package.json"
@@ -124,7 +144,7 @@ foreach ($key in $webView2Keys) {
 
 $tauriCommand = Join-Path $root "node_modules\.bin\tauri.cmd"
 $verificationArtifact = [pscustomobject]@{
-  path = [System.IO.Path]::GetRelativePath($root, $verificationPath)
+  path = Get-SafeRelativePath $root $verificationPath
   sha256 = (Get-FileHash -LiteralPath $verificationPath -Algorithm SHA256).Hash.ToLowerInvariant()
   sourceCommit = $verification.sourceCommit
 }
@@ -140,7 +160,7 @@ $manifest = [pscustomobject]@{
   smartScreenNote = if ($releaseSigned) { "已使用本机证书进行 Authenticode 签名。" } else { "未进行代码签名，Windows SmartScreen 可能显示未知发布者。" }
   platform = "windows-x86_64"
   webView2 = [pscustomobject]@{ detectedRuntimeVersion = $webView2Version; portable = "system-evergreen-required"; installer = "offlineInstaller" }
-  sizeAssessment = [pscustomobject]@{ portableMiB = $portableMiB; portableTargetMiB = 25; installerMiB = [math]::Round($installer.bytes / 1MB, 2); installerDeltaFrom030MiB = $installerDeltaMiB; installerDeltaTargetMiB = 30 }
+  sizeAssessment = [pscustomobject]@{ portableMiB = $portableMiB; portableTargetMiB = 25; installerMiB = [math]::Round($installer.bytes / 1MB, 2); installerDeltaFromV050MiB = $installerDeltaMiB; installerDeltaTargetMiB = 30 }
   toolchain = [pscustomobject]@{
     node = Get-ToolVersion "node" @("--version")
     npm = Get-ToolVersion "npm" @("--version")

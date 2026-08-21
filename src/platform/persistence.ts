@@ -1,5 +1,6 @@
 import type { AppState } from "../domain/types";
 import { createDefaultState, migrateToV5, STORAGE_KEY_V1, STORAGE_KEY_V2, STORAGE_KEY_V3, STORAGE_KEY_V4 } from "../app/state";
+import { createRuntimeMessage, messageFromUnknown, runtimeError } from "../domain/runtimeMessage";
 
 interface PersistedEnvelope {
   current?: unknown;
@@ -52,7 +53,7 @@ class IndexedDbAdapter implements PersistenceAdapter {
         }
       };
       request.onsuccess = () => resolve(request.result);
-      request.onerror = () => reject(request.error ?? new Error("IndexedDB 打开失败"));
+      request.onerror = () => reject(request.error ?? runtimeError("errors.indexedDbOpen"));
     });
   }
 
@@ -62,7 +63,7 @@ class IndexedDbAdapter implements PersistenceAdapter {
       const transaction = database.transaction(this.storeName, "readonly");
       const request = transaction.objectStore(this.storeName).get("envelope");
       request.onsuccess = () => resolve((request.result as PersistedEnvelope | undefined) ?? null);
-      request.onerror = () => reject(request.error ?? new Error("IndexedDB 读取失败"));
+      request.onerror = () => reject(request.error ?? runtimeError("errors.indexedDbRead"));
       transaction.oncomplete = () => database.close();
     });
   }
@@ -78,7 +79,7 @@ class IndexedDbAdapter implements PersistenceAdapter {
       };
       transaction.onerror = () => {
         database.close();
-        reject(transaction.error ?? new Error("IndexedDB 保存失败"));
+        reject(transaction.error ?? runtimeError("errors.indexedDbSave"));
       };
     });
   }
@@ -122,18 +123,18 @@ function readEnvelope(envelope: PersistedEnvelope | null, source: string, warnin
   if (!envelope) return null;
   if (envelope.current) {
     try {
-      if (isIncompleteSnapshot(envelope.current)) throw new Error("当前数据损坏");
+      if (isIncompleteSnapshot(envelope.current)) throw runtimeError("errors.currentDataCorrupt");
       return { state: migrateToV5(envelope.current, source), source: `${source}-current` };
     } catch (error) {
-      warnings.push(`当前数据损坏：${(error as Error).message}`);
+      warnings.push(createRuntimeMessage("errors.currentDataWarning", { message: messageFromUnknown(error) }));
     }
   }
   if (envelope.lastKnownGood) {
     try {
-      if (isIncompleteSnapshot(envelope.lastKnownGood)) throw new Error("恢复副本不可用");
+      if (isIncompleteSnapshot(envelope.lastKnownGood)) throw runtimeError("errors.recoveryCopyUnavailable");
       return { state: migrateToV5(envelope.lastKnownGood, source), source: `${source}-last-known-good` };
     } catch (error) {
-      warnings.push(`恢复副本也不可用：${(error as Error).message}`);
+      warnings.push(createRuntimeMessage("errors.recoveryCopyWarning", { message: messageFromUnknown(error) }));
     }
   }
   return null;
@@ -145,32 +146,32 @@ export async function loadPersistedState(adapter = createPersistenceAdapter()): 
     const loaded = readEnvelope(await adapter.load(), "v5", warnings);
     if (loaded) return { state: loaded.state, warnings, source: loaded.source };
   } catch (error) {
-    warnings.push(`持久化存储暂时不可用：${(error as Error).message}`);
+    warnings.push(createRuntimeMessage("errors.persistenceUnavailable", { message: messageFromUnknown(error) }));
   }
   try {
     const legacyV4 = readEnvelope(await createLegacyV4Adapter().load(), "v4", warnings);
     if (legacyV4) {
-      warnings.push("已从 v4 存储升级到 v5");
+      warnings.push(createRuntimeMessage("settings.migration.storageUpgrade", { version: 4 }));
       return { state: legacyV4.state, warnings, source: legacyV4.source };
     }
   } catch (error) {
-    warnings.push(`读取 v4 存储失败：${(error as Error).message}`);
+    warnings.push(createRuntimeMessage("errors.storageReadFailed", { version: 4, message: messageFromUnknown(error) }));
   }
   try {
     const legacyV3 = readEnvelope(await createLegacyV3Adapter().load(), "v3", warnings);
     if (legacyV3) {
-      warnings.push("已从 v3 存储升级到 v5");
+      warnings.push(createRuntimeMessage("settings.migration.storageUpgrade", { version: 3 }));
       return { state: legacyV3.state, warnings, source: legacyV3.source };
     }
   } catch (error) {
-    warnings.push(`读取 v3 存储失败：${(error as Error).message}`);
+    warnings.push(createRuntimeMessage("errors.storageReadFailed", { version: 3, message: messageFromUnknown(error) }));
   }
   const legacy = legacyState();
   if (legacy) {
     try {
       return { state: migrateToV5(legacy.value, legacy.label), warnings, source: legacy.label };
     } catch (error) {
-      warnings.push(`旧数据迁移失败：${(error as Error).message}`);
+      warnings.push(createRuntimeMessage("errors.legacyMigrationFailed", { message: messageFromUnknown(error) }));
     }
   }
   return { state: createDefaultState(), warnings, source: "defaults" };

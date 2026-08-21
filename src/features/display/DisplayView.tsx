@@ -1,11 +1,14 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { Dices, Sparkles, X } from "lucide-react";
 import clsx from "clsx";
-import { closeCurrentDisplayWindow, listenDisplayState, type DisplayPayload } from "../../platform/desktop";
+import { closeCurrentDisplayWindow, listenDisplayState, setDisplayWindowTitle, type DisplayPayload } from "../../platform/desktop";
 import { ResultBoard } from "../roll/ResultVisual";
 import { BurstParticles, type BurstOrigin } from "../fx/BurstParticles";
 import type { DrawMode } from "../../domain/types";
 import BrandMark from "../../components/BrandMark";
+import { setAppLocale } from "../../i18n";
+import { modeLabel } from "../../lib/labels";
 
 function payloadMode(mode: string): DrawMode {
   if (mode === "自定义" || mode === "custom") return "custom";
@@ -15,6 +18,7 @@ function payloadMode(mode: string): DrawMode {
 }
 
 export default function DisplayView() {
+  const { t } = useTranslation();
   const [payload, setPayload] = useState<DisplayPayload | null>(null);
   const [windowMode, setWindowMode] = useState<"normal" | "fullscreen" | "overlay">("normal");
 
@@ -22,6 +26,13 @@ export default function DisplayView() {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const [singleBurstOrigin, setSingleBurstOrigin] = useState<BurstOrigin | null>(null);
   const [singleBurstToken, setSingleBurstToken] = useState<string>("");
+
+  useEffect(() => {
+    if (payload?.locale) {
+      void setAppLocale(payload.locale);
+      void setDisplayWindowTitle(payload.locale);
+    }
+  }, [payload?.locale]);
 
   useEffect(() => {
     let dispose: () => void = () => undefined;
@@ -89,13 +100,13 @@ export default function DisplayView() {
   return (
     <main className={clsx("display-view", `display-view--${windowMode}`, payload && "has-result")}>
       <div className="display-brand">
-        <BrandMark size={28} title="掷数台" />
-        <span>掷数台 · 展示</span>
+        <BrandMark size={28} title={t("app.about")} />
+        <span>{t("app.brand")} · {t("app.display")}</span>
       </div>
       <button
         type="button"
         className="display-close"
-        aria-label="关闭展示窗口"
+        aria-label={t("display.close")}
         onClick={() => void closeCurrentDisplayWindow()}
       >
         <X size={18} />
@@ -112,13 +123,13 @@ export default function DisplayView() {
           {ceremony.phase === "countdown" && (
             <div className="ceremony-countdown-hero">
               <div className="ceremony-big-number">{ceremony.remainingSeconds}</div>
-              <p>即将揭晓结果…</p>
+              <p>{t("roll.aboutToReveal")}</p>
             </div>
           )}
           {(ceremony.phase === "revealing" || ceremony.phase === "finished") && (
             <div className="ceremony-title-banner">
               <Sparkles size={22} className="banner-sparkle" />
-              <span>{ceremony.phase === "finished" ? "排 名 揭 晓 完 毕" : "排 名 揭 晓"}</span>
+              <span>{ceremony.phase === "finished" ? t("roll.revealDone") : t("roll.revealTitle")}</span>
               <Sparkles size={22} className="banner-sparkle" />
             </div>
           )}
@@ -135,7 +146,7 @@ export default function DisplayView() {
             />
             <div className="display-results" key={payload?.animationToken}>
               <ResultBoard
-                mode={payload ? payloadMode(payload.mode) : "range"}
+                mode={payload ? payload.modeKey || payloadMode(payload.mode) : "range"}
                 results={payload?.results || []}
                 isCeremony={true}
                 ceremonyRevealedCount={ceremony.revealedCount}
@@ -145,7 +156,7 @@ export default function DisplayView() {
             </div>
           </div>
           <div className="display-meta">
-            <strong>{payload?.mode}</strong>
+            <strong>{payload && modeLabel(payload.modeKey || payloadMode(payload.mode), payload.locale)}</strong>
             <span>{payload?.summary}</span>
           </div>
         </>
@@ -156,26 +167,26 @@ export default function DisplayView() {
           <div className="display-results-wrap">
             <div className="display-results" key={payload.animationToken}>
               {payload.results.length ? (
-                <ResultBoard mode={payloadMode(payload.mode)} results={payload.results} cardRefs={cardRefs} />
+                <ResultBoard mode={payload.modeKey || payloadMode(payload.mode)} results={payload.results} cardRefs={cardRefs} />
               ) : (
                 <div className="display-wait">
                   <Dices size={56} />
-                  <strong>{payload.summary || "等待主窗口生成结果"}</strong>
+                  <strong>{payload.summary || t("display.waiting")}</strong>
                 </div>
               )}
             </div>
           </div>
           <div className="display-meta">
-            <strong>{payload.mode}</strong>
+            <strong>{modeLabel(payload.modeKey || payloadMode(payload.mode), payload.locale)}</strong>
             <span>{payload.summary}</span>
           </div>
         </>
       )}
 
       {!payload && (
-        <div className="display-wait">
+                <div className="display-wait">
           <Dices size={56} />
-          <strong>等待主窗口生成结果</strong>
+          <strong>{t("display.waiting")}</strong>
         </div>
       )}
     </main>

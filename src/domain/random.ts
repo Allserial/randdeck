@@ -1,4 +1,5 @@
 import type { PoolEntry, WeightedEntry } from "./types";
+import { createRuntimeMessage, runtimeError } from "./runtimeMessage";
 
 export const MAX_COUNT = 50;
 export const MAX_RANGE_SIZE = 1_000_000;
@@ -10,7 +11,7 @@ export interface RandomSource {
 
 export class WebCryptoRandomSource implements RandomSource {
   nextUint32(): number {
-    if (!globalThis.crypto?.getRandomValues) throw new Error("当前环境不支持 Web Crypto 随机源");
+    if (!globalThis.crypto?.getRandomValues) throw runtimeError("errors.webCrypto");
     return globalThis.crypto.getRandomValues(new Uint32Array(1))[0];
   }
 }
@@ -74,8 +75,8 @@ export function parseExclusionInput(input: unknown): { tokens: ExclusionToken[];
       const range = raw.match(/^([+-]?\d+)\.\.([+-]?\d+)$/);
       if (range && Number.isSafeInteger(Number(range[1])) && Number.isSafeInteger(Number(range[2]))) {
         parsed = { raw, kind: "range", min: Math.min(Number(range[1]), Number(range[2])), max: Math.max(Number(range[1]), Number(range[2])) };
-      } else if (raw === "奇数") parsed = { raw, kind: "odd" };
-      else if (raw === "偶数") parsed = { raw, kind: "even" };
+      } else if (/^(奇数|odd)$/i.test(raw)) parsed = { raw, kind: "odd" };
+      else if (/^(偶数|even)$/i.test(raw)) parsed = { raw, kind: "even" };
     }
     if (!parsed) invalidTokens.push(raw);
     else {
@@ -100,11 +101,11 @@ export function exclusionHitCount(values: number[], tokens: ExclusionToken[]): n
 }
 
 export function buildRangeEntries(min: number, max: number): { entries: PoolEntry[]; error: string } {
-  if (!Number.isSafeInteger(min) || !Number.isSafeInteger(max)) return { entries: [], error: "范围必须是整数" };
+  if (!Number.isSafeInteger(min) || !Number.isSafeInteger(max)) return { entries: [], error: createRuntimeMessage("errors.rangeInteger") };
   const lo = Math.min(min, max);
   const hi = Math.max(min, max);
   const size = hi - lo + 1;
-  if (size > MAX_RANGE_SIZE) return { entries: [], error: `范围过大，请控制在 ${MAX_RANGE_SIZE.toLocaleString()} 个数字以内` };
+  if (size > MAX_RANGE_SIZE) return { entries: [], error: createRuntimeMessage("errors.rangeTooLarge", { count: MAX_RANGE_SIZE }) };
   return { entries: Array.from({ length: size }, (_, index) => ({ id: `range-${lo + index}`, value: lo + index, tags: [] })), error: "" };
 }
 

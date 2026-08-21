@@ -3,12 +3,17 @@ import { compareDice, diceNodes, evaluateDiceExpression } from "./dice";
 import { drawUnweighted, SeededRandomSource, type RandomSource } from "./random";
 import { matchesTagFilter, tagsForValue } from "./tags";
 import { drawWeightedEntries } from "./weighted";
+import { createRuntimeMessage, runtimeError, type RuntimeMessageParams } from "./runtimeMessage";
 
 export const PROBABILITY_STATE_BUDGET = 250_000;
 export const SIMULATION_OPTIONS = [5_000, 20_000, 100_000] as const;
 
-class ExactUnavailable extends Error {}
-class StateBudgetExceeded extends Error {}
+class ExactUnavailable extends Error {
+  constructor(code: string, params: RuntimeMessageParams = {}) { super(createRuntimeMessage(code, params)); }
+}
+class StateBudgetExceeded extends Error {
+  constructor(code: string, params: RuntimeMessageParams = {}) { super(createRuntimeMessage(code, params)); }
+}
 
 type Distribution = Map<number, number>;
 
@@ -28,14 +33,14 @@ function diceOutcome(node: Extract<DiceAstNode, { type: "dice" }>, faces: number
 }
 
 function exactDiceNode(node: Extract<DiceAstNode, { type: "dice" }>, budget: { states: number }): Distribution {
-  if (node.modifiers.explode || node.modifiers.reroll) throw new ExactUnavailable("爆骰或重掷使用模拟分析");
+  if (node.modifiers.explode || node.modifiers.reroll) throw new ExactUnavailable("insights.reasons.explodeOrReroll");
   const combinations = node.sides ** node.count;
-  if (!Number.isFinite(combinations) || combinations > PROBABILITY_STATE_BUDGET) throw new StateBudgetExceeded("骰子组合超过精确计算预算");
+  if (!Number.isFinite(combinations) || combinations > PROBABILITY_STATE_BUDGET) throw new StateBudgetExceeded("insights.reasons.diceCombinationsBudget");
   const counts = new Map<number, number>();
   const faces: number[] = [];
   const walk = (depth: number) => {
     if (depth === node.count) {
-      budget.states += 1; if (budget.states > PROBABILITY_STATE_BUDGET) throw new StateBudgetExceeded("骰子状态超过精确计算预算");
+      budget.states += 1; if (budget.states > PROBABILITY_STATE_BUDGET) throw new StateBudgetExceeded("insights.reasons.diceStatesBudget");
       const value = diceOutcome(node, faces); counts.set(value, (counts.get(value) || 0) + 1); return;
     }
     for (let face = 1; face <= node.sides; face += 1) { faces.push(face); walk(depth + 1); faces.pop(); }
@@ -50,10 +55,10 @@ function exactAst(node: DiceAstNode, budget: { states: number }): Distribution {
   if (node.type === "unary") return new Map([...exactAst(node.value, budget)].map(([value, probability]) => [node.operator === "-" ? -value : value, probability]));
   const left = exactAst(node.left, budget); const right = exactAst(node.right, budget); const output: Distribution = new Map();
   for (const [leftValue, leftProbability] of left) for (const [rightValue, rightProbability] of right) {
-    budget.states += 1; if (budget.states > PROBABILITY_STATE_BUDGET) throw new StateBudgetExceeded("表达式状态超过精确计算预算");
-    if (node.operator === "/" && rightValue === 0) throw new Error("表达式不能除以零");
+    budget.states += 1; if (budget.states > PROBABILITY_STATE_BUDGET) throw new StateBudgetExceeded("insights.reasons.expressionStatesBudget");
+    if (node.operator === "/" && rightValue === 0) throw runtimeError("errors.divideByZero");
     const value = { "+": leftValue + rightValue, "-": leftValue - rightValue, "*": leftValue * rightValue, "/": leftValue / rightValue }[node.operator];
-    if (!Number.isFinite(value)) throw new Error("表达式结果不是有限数字");
+    if (!Number.isFinite(value)) throw runtimeError("errors.nonFiniteResult");
     addProbability(output, value, leftProbability * rightProbability);
   }
   return output;
@@ -62,7 +67,7 @@ function exactAst(node: DiceAstNode, budget: { states: number }): Distribution {
 function weightedWithoutReplacement(request: ProbabilityRequest): ProbabilityPoint[] {
   const entries = request.candidates; const count = Math.min(request.count, entries.length);
   if (count >= entries.length) return entries.map((entry) => ({ value: entry.value, probability: 1 / entries.length, expectedCount: 1 }));
-  if (entries.length > 20) throw new StateBudgetExceeded("加权无放回候选过多");
+  if (entries.length > 20) throw new StateBudgetExceeded("insights.reasons.weightedCandidatesBudget");
   let states = new Map<number, number>([[0, 1]]);
   for (let draw = 0; draw < count; draw += 1) {
     const next = new Map<number, number>();
@@ -75,7 +80,7 @@ function weightedWithoutReplacement(request: ProbabilityRequest): ProbabilityPoi
       });
     }
     states = next;
-    if (states.size > PROBABILITY_STATE_BUDGET) throw new StateBudgetExceeded("加权无放回状态超过精确计算预算");
+    if (states.size > PROBABILITY_STATE_BUDGET) throw new StateBudgetExceeded("insights.reasons.weightedStatesBudget");
   }
   const inclusion = entries.map(() => 0);
   states.forEach((probability, mask) => entries.forEach((_entry, index) => { if (mask & (1 << index)) inclusion[index] += probability; }));
@@ -84,22 +89,22 @@ function weightedWithoutReplacement(request: ProbabilityRequest): ProbabilityPoi
 
 export function analyzeExact(request: ProbabilityRequest): ProbabilityReport {
   if (request.mode === "expression") {
-    if (!request.expression) throw new Error("缺少骰子表达式");
-    if (request.expression.constrained) throw new ExactUnavailable("标签约束结果使用模拟分析");
+    if (!request.expression) throw runtimeError("errors.probabilityMissingExpression");
+    if (request.expression.constrained) throw new ExactUnavailable("insights.reasons.tagConstraint");
     const distribution = exactAst(request.expression.ast, { states: 0 });
-    return { method: "exact", reason: "骰子状态在精确计算预算内", generatedAt: new Date().toISOString(), points: [...distribution].sort(([left], [right]) => left - right).map(([value, probability]) => ({ value, probability, expectedCount: probability * request.count })) };
+    return { method: "exact", reason: createRuntimeMessage("insights.reasons.diceExact"), generatedAt: new Date().toISOString(), points: [...distribution].sort(([left], [right]) => left - right).map(([value, probability]) => ({ value, probability, expectedCount: probability * request.count })) };
   }
-  if (!request.candidates.length) throw new Error("当前没有候选项");
+  if (!request.candidates.length) throw runtimeError("errors.probabilityNoCandidates");
   if (request.noDup) {
     const allEqual = request.candidates.every((entry) => entry.weight === request.candidates[0].weight);
     if (allEqual) {
       const inclusion = Math.min(request.count, request.candidates.length) / request.candidates.length;
-      return { method: "exact", reason: "等概率无放回包含概率", generatedAt: new Date().toISOString(), points: request.candidates.map((entry) => ({ value: entry.value, probability: 1 / request.candidates.length, expectedCount: inclusion })) };
+      return { method: "exact", reason: createRuntimeMessage("insights.reasons.uniformWithoutReplacement"), generatedAt: new Date().toISOString(), points: request.candidates.map((entry) => ({ value: entry.value, probability: 1 / request.candidates.length, expectedCount: inclusion })) };
     }
-    return { method: "exact", reason: "加权动态无放回精确枚举", generatedAt: new Date().toISOString(), points: weightedWithoutReplacement(request) };
+    return { method: "exact", reason: createRuntimeMessage("insights.reasons.weightedWithoutReplacement"), generatedAt: new Date().toISOString(), points: weightedWithoutReplacement(request) };
   }
   const total = request.candidates.reduce((sum, entry) => sum + entry.weight, 0);
-  return { method: "exact", reason: request.mode === "weighted" ? "归一化权重" : "等概率候选池", generatedAt: new Date().toISOString(), points: request.candidates.map((entry) => ({ value: entry.value, probability: entry.weight / total, expectedCount: entry.weight / total * request.count })) };
+  return { method: "exact", reason: createRuntimeMessage(request.mode === "weighted" ? "insights.reasons.normalizedWeight" : "insights.reasons.uniformPool"), generatedAt: new Date().toISOString(), points: request.candidates.map((entry) => ({ value: entry.value, probability: entry.weight / total, expectedCount: entry.weight / total * request.count })) };
 }
 
 function expressionBatch(request: ProbabilityRequest, source: RandomSource): number[] {
@@ -112,7 +117,7 @@ function expressionBatch(request: ProbabilityRequest, source: RandomSource): num
       accepted = !expression.constrained || matchesTagFilter(tags, expression.selectedTags || [], expression.combine || "any");
       if (accepted) { values.push(result.total); break; }
     }
-    if (!accepted) throw new Error("模拟在 10,000 次尝试内没有得到符合标签的骰子结果");
+    if (!accepted) throw runtimeError("errors.probabilityNoAcceptedResult");
   }
   return values;
 }
@@ -124,7 +129,7 @@ export async function simulateProbability(
   const source = new SeededRandomSource(options.seed); const counts = new Map<number, number>();
   const samples = Math.max(1, Math.trunc(options.samples));
   for (let sample = 0; sample < samples; sample += 1) {
-    if (options.signal?.aborted) throw new DOMException("概率分析已取消", "AbortError");
+    if (options.signal?.aborted) throw new DOMException("Probability analysis cancelled", "AbortError");
     const values = request.mode === "expression"
       ? expressionBatch(request, source)
       : (request.mode === "weighted" ? drawWeightedEntries(request.candidates, request.count, !request.noDup, source) : drawUnweighted(request.candidates, request.count, !request.noDup, source)).map((entry) => entry.value);
@@ -135,7 +140,7 @@ export async function simulateProbability(
   const totalRolls = samples * request.count;
   const points = [...counts].sort(([left], [right]) => left - right).map(([value, count]) => ({ value, probability: count / totalRolls, expectedCount: count / samples }));
   const uncertainty = points.reduce((max, point) => Math.max(max, 1.96 * Math.sqrt(point.probability * (1 - point.probability) / Math.max(1, totalRolls))), 0);
-  return { method: "simulation", reason: "精确状态不可用或超过预算", generatedAt: new Date().toISOString(), seed: options.seed >>> 0, samples, uncertainty, points };
+  return { method: "simulation", reason: createRuntimeMessage("insights.reasons.simulationFallback"), generatedAt: new Date().toISOString(), seed: options.seed >>> 0, samples, uncertainty, points };
 }
 
 export async function analyzeProbabilityLocal(

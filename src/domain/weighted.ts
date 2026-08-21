@@ -3,6 +3,7 @@ import type { WeightedEntry } from "./types";
 import type { ExclusionToken, RandomSource } from "./random";
 import { createId, isExcluded, randomIndex } from "./random";
 import { matchesTagFilter } from "./tags";
+import { createRuntimeMessage, runtimeError } from "./runtimeMessage";
 
 export const MAX_WEIGHTED_ROWS = 500;
 export const MAX_WEIGHT = 1_000_000;
@@ -23,13 +24,13 @@ export function validateWeightedEntries(entries: unknown): { entries: WeightedEn
   const normalized = normalizeWeightedEntries(source);
   const errors: string[] = [];
   const seen = new Set<number>();
-  if (source.length > MAX_WEIGHTED_ROWS) errors.push(`加权表最多支持 ${MAX_WEIGHTED_ROWS} 行`);
+  if (source.length > MAX_WEIGHTED_ROWS) errors.push(createRuntimeMessage("errors.weightedRowsLimit", { count: MAX_WEIGHTED_ROWS }));
   normalized.forEach((entry, index) => {
-    if (seen.has(entry.value)) errors.push(`第 ${index + 1} 行数字重复：${entry.value}`);
+    if (seen.has(entry.value)) errors.push(createRuntimeMessage("errors.weightedDuplicate", { row: index + 1, value: entry.value }));
     seen.add(entry.value);
-    if (entry.weight < 1 || entry.weight > MAX_WEIGHT) errors.push(`第 ${index + 1} 行权重必须在 1 至 ${MAX_WEIGHT.toLocaleString()} 之间`);
+    if (entry.weight < 1 || entry.weight > MAX_WEIGHT) errors.push(createRuntimeMessage("errors.weightedWeightRange", { row: index + 1, count: MAX_WEIGHT }));
   });
-  if (!normalized.length) errors.push("请至少添加一行有效的加权数字");
+  if (!normalized.length) errors.push(createRuntimeMessage("errors.weightedEmpty"));
   return { entries: normalized, errors: [...new Set(errors)] };
 }
 
@@ -71,7 +72,7 @@ export function weightedEntriesToCsv(entries: WeightedEntry[]): string {
 
 export function parseWeightedCsv(text: string): WeightedEntry[] {
   const parsed = Papa.parse<Record<string, string>>(String(text ?? "").replace(/^\uFEFF/, ""), { header: true, skipEmptyLines: true, transformHeader: (header) => header.trim() });
-  if (parsed.errors.length) throw new Error(`CSV 第 ${Number(parsed.errors[0].row ?? 0) + 1} 行无法解析：${parsed.errors[0].message}`);
+  if (parsed.errors.length) throw runtimeError("errors.csvParse", { row: Number(parsed.errors[0].row ?? 0) + 1, message: parsed.errors[0].message });
   return parsed.data.map((row) => ({
     id: createId("weighted-import"),
     value: Number(row["数字"] ?? row.value),

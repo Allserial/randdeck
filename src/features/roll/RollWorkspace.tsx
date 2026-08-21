@@ -1,25 +1,17 @@
 import { History, Settings2 } from "lucide-react";
 import clsx from "clsx";
 import { useEffect, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
 import type { ActiveDrawMode } from "../../domain/types";
 import { useAppStore } from "../../app/store";
 import { Segmented } from "../../components/ui/Segmented";
 import ResultStage from "./ResultStage";
 import DrawInspector from "./DrawInspector";
-
-const modeOptions: Array<{ value: ActiveDrawMode; label: string }> = [
-  { value: "range", label: "范围池" },
-  { value: "custom", label: "自定义池" },
-  { value: "expression", label: "骰子表达式" },
-];
-
-const MODE_DESCRIPTIONS: Record<string, string> = {
-  range: "从最小到最大抽整数，可排除、可抽后移除",
-  custom: "只从你列出的数字清单中随机抽取",
-  expression: "支持 2d6、4d6kh3 等常用骰子式子",
-};
+import { formatLocaleTime } from "../../i18n/messages";
 
 export default function RollWorkspace() {
+  const { t } = useTranslation();
+  const translate = t as unknown as (key: string) => string;
   const settings = useAppStore((state) => state.settings);
   const history = useAppStore((state) => state.history);
   const inspectorOpen = useAppStore((state) => state.ui.inspectorOpen);
@@ -33,6 +25,11 @@ export default function RollWorkspace() {
   const isCeremonyActive = ceremony.phase !== "idle";
   const inspectorToggleRef = useRef<HTMLButtonElement>(null);
   const [isNarrow, setIsNarrow] = useState(() => globalThis.matchMedia?.("(max-width: 1039px)").matches ?? false);
+  const modeOptions: Array<{ value: ActiveDrawMode; label: string }> = [
+    { value: "range", label: t("modes.range") },
+    { value: "custom", label: t("modes.custom") },
+    { value: "expression", label: t("modes.expression") },
+  ];
 
   useEffect(() => {
     const media = globalThis.matchMedia?.("(max-width: 1039px)");
@@ -60,7 +57,7 @@ export default function RollWorkspace() {
         <div className="mode-bar-wrap">
           <div className="mode-bar">
             <Segmented
-              label="抽取模式"
+              label={t("roll.modeLabel")}
               value={activeMode}
               options={modeOptions}
               onChange={(mode) => {
@@ -68,23 +65,23 @@ export default function RollWorkspace() {
               }}
             />
           </div>
-          <p className="mode-bar-desc">{MODE_DESCRIPTIONS[activeMode] || ""}</p>
+          <p className="mode-bar-desc">{translate(`roll.descriptions.${activeMode}`)}</p>
         </div>
 
         <ResultStage />
 
         <section
           className="recent-strip"
-          aria-label="最近批次"
+          aria-label={t("roll.recent")}
           style={{ visibility: history.length > 0 && !isCeremonyActive ? "visible" : "hidden" }}
         >
           <div className="recent-strip-label">
             <span className="section-label">
               <History size={12} style={{ display: "inline", verticalAlign: "middle", marginRight: 4 }} />
-              最近批次
+              {t("roll.recent")}
             </span>
             <button type="button" onClick={() => setInsightsTab("history")}>
-              查看全部 ({history.length})
+              {t("roll.viewAll", { count: history.length })}
             </button>
           </div>
           <div className="recent-items">
@@ -92,7 +89,7 @@ export default function RollWorkspace() {
               <button
                 type="button"
                 key={entry.id}
-                title="点击召回此批结果"
+                title={t("roll.recallTitle")}
                 onClick={() => recallHistory(entry.id)}
               >
                 <span className="recent-values">
@@ -101,8 +98,8 @@ export default function RollWorkspace() {
                 </span>
                 <small>
                   {entry.createdAt
-                    ? new Date(entry.createdAt).toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" })
-                    : "--:--"} · 召回
+                    ? formatLocaleTime(entry.createdAt, useAppStore.getState().ui.locale)
+                    : "--:--"} · {t("roll.recall")}
                 </small>
               </button>
             ))}
@@ -114,7 +111,7 @@ export default function RollWorkspace() {
         type="button"
         ref={inspectorToggleRef}
         className={clsx("inspector-toggle", inspectorOpen && "is-open")}
-        aria-label="打开抽取设置"
+        aria-label={t("roll.openInspector")}
         aria-controls="draw-inspector-panel"
         aria-expanded={inspectorOpen}
         aria-hidden={!isNarrow || inspectorOpen}
@@ -122,7 +119,7 @@ export default function RollWorkspace() {
         onClick={() => setInspectorOpen(!inspectorOpen)}
       >
         <Settings2 size={17} />
-        <span>抽取设置</span>
+        <span>{t("roll.inspector")}</span>
       </button>
       <div
         id="draw-inspector-panel"

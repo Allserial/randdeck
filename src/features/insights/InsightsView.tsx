@@ -1,4 +1,5 @@
 import { lazy, Suspense, useMemo, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { Activity, BarChart3, Copy, History, RotateCcw, Search, Trash2 } from "lucide-react";
 import clsx from "clsx";
 import type { DrawMode, ProbabilityReport, ProbabilityRequest } from "../../domain/types";
@@ -11,12 +12,14 @@ import { snapshotState, useAppStore } from "../../app/store";
 import { Button, IconButton } from "../../components/ui/Button";
 import { Dialog } from "../../components/ui/Dialog";
 import { Segmented } from "../../components/ui/Segmented";
-import { historySearchText, MODE_LABELS } from "../../lib/labels";
+import { historySearchText, modeLabel } from "../../lib/labels";
+import { formatLocaleDate, formatLocaleNumber, translateRuntimeMessage } from "../../i18n/messages";
 
 const ChartsPanel = lazy(() => import("./ChartsPanel"));
 type Tab = "overview" | "history" | "probability";
 
 export default function InsightsView() {
+  const { t } = useTranslation();
   const historyEntries = useAppStore((state) => state.history);
   const stats = useAppStore((state) => state.stats);
   const currentMode = useAppStore((state) => state.settings.mode);
@@ -31,6 +34,7 @@ export default function InsightsView() {
   const resetModeStats = useAppStore((state) => state.resetModeStats);
   const setToast = useAppStore((state) => state.setToast);
   const setError = useAppStore((state) => state.setError);
+  const locale = useAppStore((state) => state.ui.locale);
 
   const [modeFilter, setModeFilter] = useState<DrawMode | "all">("all");
   const [dateFilter, setDateFilter] = useState("all");
@@ -104,7 +108,7 @@ export default function InsightsView() {
       const state = snapshotState();
       const plan = prepareDraw(state);
       if (plan.candidateEntries.length > 50_000)
-        throw new Error("候选结果超过 50,000 个，请缩小范围后分析，以免生成不可读的图表");
+        throw new Error(t("insights.errorTooManyCandidates"));
       const request: ProbabilityRequest = {
         mode: plan.mode,
         count: plan.count,
@@ -126,7 +130,7 @@ export default function InsightsView() {
       const observed = stats.byMode[state.settings.mode]?.values || {};
       next.points = next.points.map((point) => ({ ...point, observed: observed[String(point.value)] || 0 }));
       setReport(next);
-      setToast("概率分析完成");
+      setToast(t("insights.analysisComplete"));
     } catch (error) {
       if ((error as Error).name !== "AbortError") setError((error as Error).message);
     } finally {
@@ -147,16 +151,16 @@ export default function InsightsView() {
     <div className="insights-view">
       <header className="view-heading">
         <div>
-          <span className="section-label">数据洞察</span>
-          <h1>验证分布，不预测结果</h1>
+          <span className="section-label">{t("insights.title")}</span>
+          <h1>{t("insights.heading")}</h1>
         </div>
       </header>
 
-      <nav className="view-tabs" aria-label="数据洞察视图">
+      <nav className="view-tabs" aria-label={t("insights.viewLabel")}>
         {[
-          { id: "overview", label: "概览", icon: BarChart3 },
-          { id: "history", label: "历史", icon: History },
-          { id: "probability", label: "概率", icon: Activity },
+          { id: "overview", label: t("insights.overview"), icon: BarChart3 },
+          { id: "history", label: t("insights.history"), icon: History },
+          { id: "probability", label: t("insights.probability"), icon: Activity },
         ].map(({ id, label, icon: Icon }) => (
           <button
             type="button"
@@ -175,27 +179,27 @@ export default function InsightsView() {
           <label className="history-search">
             <Search size={14} />
             <input
-              aria-label="搜索历史"
+              aria-label={t("insights.searchHistory")}
               value={search}
               onChange={(event) => setSearch(event.target.value)}
-              placeholder="搜索数字、模式或日期"
+              placeholder={t("insights.searchPlaceholder")}
             />
           </label>
           <label>
-            模式
+            {t("insights.mode")}
             <select value={modeFilter} onChange={(event) => setModeFilter(event.target.value as DrawMode | "all")}>
-              <option value="all">全部</option>
-              <option value="range">范围</option>
-              <option value="custom">自定义</option>
-              <option value="expression">骰子</option>
+              <option value="all">{t("common.actions.all")}</option>
+              <option value="range">{t("modes.rangeShort")}</option>
+              <option value="custom">{t("modes.customShort")}</option>
+              <option value="expression">{t("modes.expressionShort")}</option>
             </select>
           </label>
           <label>
-            时间
+            {t("insights.time")}
             <select value={dateFilter} onChange={(event) => setDateFilter(event.target.value)}>
-              <option value="all">全部</option>
-              <option value="7d">最近 7 天</option>
-              <option value="30d">最近 30 天</option>
+              <option value="all">{t("common.actions.all")}</option>
+              <option value="7d">{t("insights.last7")}</option>
+              <option value="30d">{t("insights.last30")}</option>
             </select>
           </label>
         </div>
@@ -205,29 +209,29 @@ export default function InsightsView() {
         <>
           <div className="metric-grid">
             <article>
-              <span>当前模式累计结果</span>
-              <strong>{currentStats.draws.toLocaleString()}</strong>
-              <small>{MODE_LABELS[currentMode]}</small>
+              <span>{t("insights.currentDraws")}</span>
+              <strong>{formatLocaleNumber(currentStats.draws, locale)}</strong>
+              <small>{modeLabel(currentMode, locale)}</small>
             </article>
             <article>
-              <span>候选覆盖率</span>
+              <span>{t("insights.coverage")}</span>
               <strong>{coverage.pct.toFixed(1)}%</strong>
               <small>
                 {coverage.seen}/{coverage.total}
               </small>
             </article>
             <article>
-              <span>筛选后批次</span>
+              <span>{t("insights.filteredBatches")}</span>
               <strong>{filteredHistory.length}</strong>
-              <small>{values.length} 个结果</small>
+              <small>{values.length} {t("common.units.results")}</small>
             </article>
             <article>
-              <span>未出现数字</span>
+              <span>{t("insights.missing")}</span>
               <strong>{coverage.missing.length}</strong>
-              <small>{coverage.missing.slice(0, 4).join("、") || "无"}</small>
+              <small>{coverage.missing.slice(0, 4).join("、") || t("common.status.none")}</small>
             </article>
           </div>
-          <Suspense fallback={<div className="chart-loading">正在加载图表</div>}>
+          <Suspense fallback={<div className="chart-loading">{t("insights.loadChart")}</div>}>
             <ChartsPanel frequency={frequency} trend={trend} />
           </Suspense>
           <Button
@@ -235,10 +239,10 @@ export default function InsightsView() {
             icon={<RotateCcw size={15} />}
             onClick={() => {
               resetModeStats(currentMode);
-              setToast(`${MODE_LABELS[currentMode]}统计已清零`);
+              setToast(t("insights.statsCleared", { mode: modeLabel(currentMode, locale) }));
             }}
           >
-            清零当前模式统计
+            {t("insights.resetStats")}
           </Button>
         </>
       )}
@@ -246,11 +250,11 @@ export default function InsightsView() {
       {tab === "history" && (
         <section className="history-table">
           <div className="history-table-head">
-            <span>{filteredHistory.length} 批记录</span>
+            <span>{t("insights.records", { count: filteredHistory.length })}</span>
             <div className="heading-actions">
               {compareIds.length > 0 && (
                 <Button variant="quiet" onClick={clearCompare}>
-                  清除对比
+                  {t("insights.clearCompare")}
                 </Button>
               )}
               <Button
@@ -259,56 +263,56 @@ export default function InsightsView() {
                 disabled={!historyEntries.length}
                 onClick={() => setClearOpen(true)}
               >
-                清空历史
+                {t("insights.clearHistory")}
               </Button>
             </div>
           </div>
           {compared.length === 2 && compareSets && (
             <div className="compare-panel" data-print="compare">
               <article>
-                <h3>批次 A</h3>
+                <h3>{t("insights.batchA")}</h3>
                 <p>{compared[0]!.results.map((result) => result.total).join(" · ")}</p>
               </article>
               <article>
-                <h3>批次 B</h3>
+                <h3>{t("insights.batchB")}</h3>
                 <p>{compared[1]!.results.map((result) => result.total).join(" · ")}</p>
               </article>
               <article>
-                <h3>对比</h3>
-                <p>交集 {[...compareSets.left].filter((value) => compareSets.right.has(value)).join("、") || "无"}</p>
-                <p>仅 A {[...compareSets.left].filter((value) => !compareSets.right.has(value)).join("、") || "无"}</p>
-                <p>仅 B {[...compareSets.right].filter((value) => !compareSets.left.has(value)).join("、") || "无"}</p>
+                <h3>{t("insights.compare")}</h3>
+                <p>{t("insights.intersection", { values: [...compareSets.left].filter((value) => compareSets.right.has(value)).join("、") || t("common.status.none") })}</p>
+                <p>{t("insights.onlyA", { values: [...compareSets.left].filter((value) => !compareSets.right.has(value)).join("、") || t("common.status.none") })}</p>
+                <p>{t("insights.onlyB", { values: [...compareSets.right].filter((value) => !compareSets.left.has(value)).join("、") || t("common.status.none") })}</p>
               </article>
             </div>
           )}
           {filteredHistory.length ? (
             filteredHistory.map((entry) => (
               <article key={entry.id} className={clsx(compareIds.includes(entry.id) && "is-compared")}>
-                <span className="history-time">{new Date(entry.createdAt || 0).toLocaleString("zh-CN")}</span>
-                <span className="mode-badge">{MODE_LABELS[entry.mode]}</span>
+                <span className="history-time">{formatLocaleDate(entry.createdAt || 0, locale, { dateStyle: "short", timeStyle: "short" })}</span>
+                <span className="mode-badge">{modeLabel(entry.mode, locale)}</span>
                 <button type="button" className="history-result" onClick={() => recallHistory(entry.id)}>
                   {entry.results.map((result) => result.total).join(" · ")}
                 </button>
-                {entry.legacy && <small>兼容记录</small>}
-                <IconButton label="召回该批" onClick={() => recallHistory(entry.id)}>
+                {entry.legacy && <small>{t("insights.compatibleRecord")}</small>}
+                <IconButton label={t("insights.recall")} onClick={() => recallHistory(entry.id)}>
                   <History size={14} />
                 </IconButton>
-                <IconButton label="加入对比" onClick={() => toggleCompare(entry.id)}>
+                <IconButton label={t("insights.addCompare")} onClick={() => toggleCompare(entry.id)}>
                   <Search size={14} />
                 </IconButton>
                 <IconButton
-                  label="复制该批"
+                  label={t("insights.copyBatch")}
                   onClick={() => void copyText(entry.results.map((result) => result.total).join(", "))}
                 >
                   <Copy size={14} />
                 </IconButton>
-                <IconButton label="删除该批" onClick={() => deleteHistory(entry.id)}>
+                <IconButton label={t("insights.deleteBatch")} onClick={() => deleteHistory(entry.id)}>
                   <Trash2 size={14} />
                 </IconButton>
               </article>
             ))
           ) : (
-            <p className="empty-editor">没有符合筛选条件的历史</p>
+            <p className="empty-editor">{t("insights.noMatchingHistory")}</p>
           )}
         </section>
       )}
@@ -317,17 +321,17 @@ export default function InsightsView() {
         <section className="probability-workspace">
           <div className="probability-controls">
             <div>
-              <span className="section-label">混合引擎</span>
-              <h2>当前配置概率分析</h2>
-              <p>优先精确计算；状态过大、爆骰、重掷或标签约束自动改用可复算模拟。</p>
+              <span className="section-label">{t("insights.engine")}</span>
+              <h2>{t("insights.analysisHeading")}</h2>
+              <p>{t("insights.analysisDescription")}</p>
             </div>
             <Segmented
-              label="模拟样本数"
+              label={t("insights.sampleCount")}
               value={String(samples) as "5000" | "20000" | "100000"}
               options={[
-                { value: "5000", label: "5 千" },
-                { value: "20000", label: "2 万" },
-                { value: "100000", label: "10 万" },
+                { value: "5000", label: "5k" },
+                { value: "20000", label: "20k" },
+                { value: "100000", label: "100k" },
               ]}
               onChange={(value) => setSamples(Number(value) as 5_000 | 20_000 | 100_000)}
             />
@@ -343,21 +347,21 @@ export default function InsightsView() {
                 icon={analyzing ? <Trash2 size={16} /> : <Activity size={16} />}
                 onClick={() => (analyzing ? controller.current?.abort() : void runAnalysis())}
               >
-                {analyzing ? "取消分析" : "开始分析"}
+                {analyzing ? t("insights.cancelAnalysis") : t("insights.startAnalysis")}
               </Button>
             </div>
           </div>
           {report && (
             <>
               <div className="report-summary">
-                <span className={report.method}>{report.method === "exact" ? "精确" : "模拟"}</span>
-                <strong>{report.reason}</strong>
+                <span className={report.method}>{report.method === "exact" ? t("common.status.exact") : t("common.status.simulated")}</span>
+                <strong>{translateRuntimeMessage(report.reason, t)}</strong>
                 {report.seed !== undefined && <code>seed {report.seed}</code>}
                 {report.uncertainty !== undefined && (
-                  <small>最大 95% 误差约 ±{(report.uncertainty * 100).toFixed(2)}%</small>
+                  <small>{t("insights.maxError", { value: (report.uncertainty * 100).toFixed(2) })}</small>
                 )}
               </div>
-              <Suspense fallback={<div className="chart-loading">正在加载概率图表</div>}>
+                <Suspense fallback={<div className="chart-loading">{t("insights.probabilityChart")}</div>}>
                 <ChartsPanel frequency={[]} trend={[]} probability={report} />
               </Suspense>
               <div className="probability-table">
@@ -365,8 +369,8 @@ export default function InsightsView() {
                   <div key={point.value}>
                     <strong>{point.value}</strong>
                     <span>{(point.probability * 100).toFixed(3)}%</span>
-                    <span>每批期望 {point.expectedCount.toFixed(3)}</span>
-                    <span>实际 {point.observed ?? 0}</span>
+                    <span>{t("insights.expectedPerBatch", { value: point.expectedCount.toFixed(3) })}</span>
+                    <span>{t("insights.observed", { value: point.observed ?? 0 })}</span>
                   </div>
                 ))}
               </div>
@@ -378,27 +382,27 @@ export default function InsightsView() {
       <Dialog
         open={clearOpen}
         onOpenChange={setClearOpen}
-        title="清空全部历史"
-        description="统计账本不会随普通历史删除而改变。"
+        title={t("insights.clearHistoryTitle")}
+        description={t("insights.clearHistoryDescription")}
         footer={
           <>
             <Button variant="quiet" onClick={() => setClearOpen(false)}>
-              取消
+              {t("common.actions.cancel")}
             </Button>
             <Button
               variant="danger"
               onClick={() => {
                 clearHistory();
                 setClearOpen(false);
-                setToast("历史与结果舞台已清空，统计保持不变");
+                setToast(t("insights.historyCleared"));
               }}
             >
-              确认清空
+              {t("insights.confirmClear")}
             </Button>
           </>
         }
       >
-        <p>此操作会删除历史批次并清空结果舞台，无法撤销。</p>
+        <p>{t("insights.clearHistoryBody")}</p>
       </Dialog>
     </div>
   );

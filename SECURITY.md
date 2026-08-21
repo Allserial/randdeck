@@ -1,19 +1,25 @@
-# 安全策略
+# Security Policy
 
-## 支持版本
+Chinese version: [SECURITY.zh-CN.md](SECURITY.zh-CN.md).
 
-当前仅维护最新正式版本。发现问题后，请先确认使用的是 GitHub Releases 中的最新版本。
+## Supported versions
 
-## 私密报告安全问题
+Only the latest stable release is supported. Before reporting an issue, confirm that it can be reproduced with the latest artifact published in GitHub Releases.
 
-请不要在公开 Issue 中提交漏洞细节、令牌、个人数据或可直接利用的复现材料。
+## Reporting a vulnerability privately
 
-请在仓库的 **Security** 页面使用 **Report a vulnerability** 创建私密安全报告。报告建议包含：
+Do not publish vulnerability details, credentials, personal data, or directly exploitable reproduction material in a public Issue.
 
-- 受影响版本
-- Windows 版本
-- 可复现步骤
-- 影响范围
-- 已采取的临时规避措施
+Use **Security > Report a vulnerability** in the GitHub repository to submit a private report. Please include:
 
-普通功能缺陷和界面问题可以使用公开 Issue。
+- affected RandDeck version
+- Windows version and architecture
+- reproducible steps
+- impact and expected behavior
+- temporary mitigations already taken
+
+Ordinary feature defects and visual issues can be reported through a public Issue after removing private data.
+
+## Privacy boundary
+
+RandDeck is designed for offline local operation. Do not attach `%APPDATA%\com.zhishutai.desktop\state-v5.json`, backup files, screenshots containing personal data, PDB files, or local logs unless they have been reviewed and sanitized.

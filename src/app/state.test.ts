@@ -1,7 +1,34 @@
 import { describe, expect, it } from "vitest";
 import { buildBackup, createDefaultState, migrateToV5, parseBackup } from "./state";
+import { parseRuntimeMessage } from "../domain/runtimeMessage";
+import { detectLocaleFromLanguages, normalizePersistedLocale } from "../i18n/locale";
 
 describe("AppState v5 migration", () => {
+  it("detects a fresh locale from browser language preferences", () => {
+    expect(detectLocaleFromLanguages(["en-US", "zh-CN"])).toBe("zh-CN");
+    expect(detectLocaleFromLanguages(["en-US"], "en-GB")).toBe("en-US");
+    expect(normalizePersistedLocale(undefined)).toBe("zh-CN");
+    expect(createDefaultState("en-US").ui.locale).toBe("en-US");
+  });
+
+  it("uses zh-CN for v5 states and backups that predate the locale field", () => {
+    const source = createDefaultState("en-US");
+    const { locale: _locale, ...legacyUi } = source.ui;
+    const legacyState = { ...source, ui: legacyUi };
+
+    expect(migrateToV5(legacyState, "旧 v5").ui.locale).toBe("zh-CN");
+    expect(parseBackup({
+      schema: "zhishutai.backup.v5",
+      version: 5,
+      exportedAt: new Date(0).toISOString(),
+      state: legacyState,
+    }).ui.locale).toBe("zh-CN");
+  });
+
+  it("preserves a persisted supported locale", () => {
+    expect(migrateToV5(createDefaultState("en-US"), "当前 v5").ui.locale).toBe("en-US");
+  });
+
   it("resets all mode counts to 5 when an old v5 state has no count memory", () => {
     const source = createDefaultState();
     const { countByMode: _countByMode, ...legacyUi } = source.ui;
@@ -133,6 +160,8 @@ describe("AppState v5 migration", () => {
   it("validates versioned backups", () => {
     const backup = buildBackup(createDefaultState());
     expect(parseBackup(backup).version).toBe(5);
-    expect(() => parseBackup({ version: 99 })).toThrow(/不兼容/);
+    let error: unknown;
+    try { parseBackup({ version: 99 }); } catch (caught) { error = caught; }
+    expect(parseRuntimeMessage((error as Error).message)?.key).toBe("errors.incompatibleBackup");
   });
 });

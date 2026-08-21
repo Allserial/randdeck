@@ -1,4 +1,4 @@
-param(
+﻿param(
   [Parameter(Mandatory = $true)][string]$Path,
   [string]$CertificatePath = $env:ZHISHUTAI_SIGN_CERT,
   [string]$CertificatePassword = $env:ZHISHUTAI_SIGN_PASSWORD

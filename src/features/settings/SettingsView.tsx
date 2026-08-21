@@ -1,37 +1,46 @@
 import { useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { Contrast, Database, Download, MonitorUp, Sparkles, Upload, Volume2 } from "lucide-react";
 import type { SoundProfile } from "../../domain/types";
-import { buildBackup, parseBackup, summarizeState } from "../../app/state";
+import { buildBackup, parseBackup } from "../../app/state";
 import { snapshotState, useAppStore } from "../../app/store";
-import { openDisplayWindow, setDisplayWindowMode } from "../../platform/desktop";
+import { openDisplayWindow, setApplicationWindowTitle, setDisplayWindowMode } from "../../platform/desktop";
 import { saveLocalFile } from "../../platform/files";
 import { playDrawSound } from "../../platform/audio";
 import { Button } from "../../components/ui/Button";
 import { Dialog } from "../../components/ui/Dialog";
 import { Segmented } from "../../components/ui/Segmented";
-
-const MOTION_DESCRIPTIONS: Record<string, string> = {
-  instant: "无跳动、无仪式、无礼花；倒计时结束后一次揭晓。",
-  standard: "短跳动；倒计时后生成仍逐张揭晓，礼花较弱。",
-  ceremony: "完整揭晓节奏与全屏礼花。",
-};
+import { setAppLocale } from "../../i18n";
+import { translateRuntimeMessage } from "../../i18n/messages";
+import type { AppLocale } from "../../domain/types";
+import { APP_VERSION } from "../../app/version";
 
 export default function SettingsView() {
+  const { t } = useTranslation();
+  const translate = t as unknown as (key: string) => string;
   const settings = useAppStore((state) => state.settings);
   const migrationNotes = useAppStore((state) => state.migrationNotes);
   const update = useAppStore((state) => state.updateSettings);
   const replaceState = useAppStore((state) => state.replacePersistentState);
   const setToast = useAppStore((state) => state.setToast);
   const setError = useAppStore((state) => state.setError);
+  const setLocale = useAppStore((state) => state.setLocale);
+  const locale = useAppStore((state) => state.ui.locale);
 
   const [restoreOpen, setRestoreOpen] = useState(false);
   const [restoreState, setRestoreState] = useState<ReturnType<typeof parseBackup> | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
+  const changeLocale = async (next: AppLocale) => {
+    await setAppLocale(next);
+    setLocale(next);
+    await setApplicationWindowTitle(next);
+  };
+
   const handleSoundChange = (soundProfile: SoundProfile) => {
     update({ appearance: { ...settings.appearance, soundProfile } });
     if (settings.muted) {
-      setToast("当前已静音");
+      setToast(t("settings.mutedNotice"));
     } else {
       void playDrawSound(soundProfile, false, "lock");
     }
@@ -40,11 +49,13 @@ export default function SettingsView() {
   const exportBackup = async () => {
     try {
       await saveLocalFile(
-        "掷数台-v0.5.0-完整备份.json",
+        locale === "en-US"
+          ? `RandDeck-v${APP_VERSION}-full-backup.json`
+          : `掷数台-v${APP_VERSION}-完整备份.json`,
         JSON.stringify(buildBackup(snapshotState()), null, 2),
         "application/json"
       );
-      setToast("完整备份已导出");
+      setToast(t("settings.exportBackup"));
     } catch (error) {
       setError((error as Error).message);
     }
@@ -57,7 +68,7 @@ export default function SettingsView() {
       setRestoreState(state);
       setRestoreOpen(true);
     } catch (error) {
-      setError(`备份无法恢复：${(error as Error).message}`);
+      setError(t("errors.restoreFailed", { message: translateRuntimeMessage((error as Error).message, t) }));
     }
   };
 
@@ -75,10 +86,10 @@ export default function SettingsView() {
     <div className="settings-view">
       <header className="view-heading">
         <div>
-          <span className="section-label">系统设置</span>
-          <h1>外观、展示与本地数据</h1>
+          <span className="section-label">{t("settings.system")}</span>
+          <h1>{t("settings.heading")}</h1>
         </div>
-        <span className="version-chip">v0.5.0</span>
+        <span className="version-chip">v{APP_VERSION}</span>
       </header>
 
       {/* 外观与反馈 */}
@@ -86,54 +97,66 @@ export default function SettingsView() {
         <div className="settings-band-title">
           <Contrast size={19} />
           <div>
-            <h2>外观与反馈</h2>
-            <p>墨蓝底 + 琥珀铜金属质感 2D 工作台。</p>
+            <h2>{t("settings.appearance")}</h2>
+            <p>{t("settings.appearanceDescription")}</p>
           </div>
         </div>
         <div className="settings-grid">
           <div className="setting-item">
-            <span>主题</span>
+            <span>{t("settings.language.label")}</span>
             <Segmented
-              label="主题"
+              label={t("settings.language.label")}
+              value={locale}
+              options={[
+                { value: "zh-CN", label: t("settings.language.zhCN") },
+                { value: "en-US", label: t("settings.language.enUS") },
+              ]}
+              onChange={(next) => void changeLocale(next as AppLocale)}
+            />
+          </div>
+          <div className="setting-item">
+            <span>{t("settings.theme")}</span>
+            <Segmented
+              label={t("settings.theme")}
               value={settings.appearance.theme}
               options={[
-                { value: "dark", label: "标准墨蓝" },
-                { value: "light", label: "暖灰浅色" },
-                { value: "contrast", label: "高对比" },
+                { value: "dark", label: t("settings.themes.dark") },
+                { value: "light", label: t("settings.themes.light") },
+                { value: "contrast", label: t("settings.themes.contrast") },
               ]}
               onChange={(theme) => update({ appearance: { ...settings.appearance, theme } })}
             />
           </div>
           <div className="setting-item setting-item--stacked">
             <div className="setting-item-top">
-              <span>动态效果</span>
+              <span>{t("settings.motion")}</span>
               <Segmented
-                label="动态效果"
+                label={t("settings.motion")}
                 value={settings.appearance.motion}
                 options={[
-                  { value: "instant", label: "即时" },
-                  { value: "standard", label: "标准" },
-                  { value: "ceremony", label: "仪式" },
+                  { value: "instant", label: t("settings.motions.instant") },
+                  { value: "standard", label: t("settings.motions.standard") },
+                  { value: "ceremony", label: t("settings.motions.ceremony") },
                 ]}
                 onChange={(motion) => update({ appearance: { ...settings.appearance, motion } })}
               />
             </div>
             <small className="setting-hint">
-              {MOTION_DESCRIPTIONS[settings.appearance.motion] || ""}
+              {translate(`settings.motionDescriptions.${settings.appearance.motion}`)}
             </small>
           </div>
           <div className="setting-item">
             <span>
               <Volume2 size={15} />
-              音效风格（切换试听）
+              {t("settings.sound")}
             </span>
             <Segmented
-              label="音效风格"
+              label={t("settings.sound")}
               value={settings.appearance.soundProfile}
               options={[
-                { value: "minimal", label: "极简" },
-                { value: "mechanical", label: "机械" },
-                { value: "dice", label: "骰子" },
+                { value: "minimal", label: t("settings.sounds.minimal") },
+                { value: "mechanical", label: t("settings.sounds.mechanical") },
+                { value: "dice", label: t("settings.sounds.dice") },
               ]}
               onChange={handleSoundChange}
             />
@@ -147,9 +170,9 @@ export default function SettingsView() {
             <span>
               <strong>
                 <Sparkles size={15} />
-                仪式粒子效果
+                {t("settings.particles")}
               </strong>
-              <small>仅在抽取完成时迸发 2D 铜金碎屑</small>
+              <small>{t("settings.particlesHelp")}</small>
             </span>
           </label>
         </div>
@@ -160,14 +183,14 @@ export default function SettingsView() {
         <div className="settings-band-title">
           <MonitorUp size={19} />
           <div>
-            <h2>独立展示窗口</h2>
-            <p>可投屏演示或透明置顶悬浮。</p>
+            <h2>{t("settings.displayWindow")}</h2>
+            <p>{t("settings.displayDescription")}</p>
           </div>
         </div>
         <div className="display-settings">
           <div>
-            <strong>展示模式选择</strong>
-            <span>支持普通视窗、全屏横向演示与无边框透明置顶</span>
+            <strong>{t("settings.displayMode")}</strong>
+            <span>{t("settings.displayModeHelp")}</span>
           </div>
           <div className="display-modes">
             <button
@@ -175,21 +198,21 @@ export default function SettingsView() {
               className={settings.desktop.displayMode === "normal" ? "active" : ""}
               onClick={() => void setDisplay("normal")}
             >
-              普通窗口
+              {t("settings.normalWindow")}
             </button>
             <button
               type="button"
               className={settings.desktop.displayMode === "fullscreen" ? "active" : ""}
               onClick={() => void setDisplay("fullscreen")}
             >
-              全屏演示
+              {t("settings.fullscreen")}
             </button>
             <button
               type="button"
               className={settings.desktop.displayMode === "overlay" ? "active" : ""}
               onClick={() => void setDisplay("overlay")}
             >
-              透明置顶
+              {t("settings.overlay")}
             </button>
           </div>
           <label className="setting-toggle">
@@ -205,8 +228,8 @@ export default function SettingsView() {
               }}
             />
             <span>
-              <strong>透明置顶鼠标穿透</strong>
-              <small>开启后鼠标点击可直接穿透展示窗口到下层窗口</small>
+              <strong>{t("settings.clickThrough")}</strong>
+              <small>{t("settings.clickThroughHelp")}</small>
             </span>
           </label>
           {settings.desktop.displayClickThrough && (
@@ -217,7 +240,7 @@ export default function SettingsView() {
                 await setDisplayWindowMode(settings.desktop.displayMode, false);
               }}
             >
-              立即关闭鼠标穿透
+              {t("settings.disableClickThrough")}
             </Button>
           )}
         </div>
@@ -228,16 +251,16 @@ export default function SettingsView() {
         <div className="settings-band-title">
           <Database size={19} />
           <div>
-            <h2>本地数据与备份</h2>
-            <p>纯本地加密级生成，支持导出/导入版本化完整数据。</p>
+            <h2>{t("settings.localData")}</h2>
+            <p>{t("settings.localDataDescription")}</p>
           </div>
         </div>
         <div className="data-actions">
           <Button icon={<Download size={15} />} onClick={() => void exportBackup()}>
-            导出完整备份
+            {t("settings.exportBackup")}
           </Button>
           <Button icon={<Upload size={15} />} onClick={() => fileRef.current?.click()}>
-            恢复备份
+            {t("settings.restoreBackup")}
           </Button>
           <input
             ref={fileRef}
@@ -252,9 +275,9 @@ export default function SettingsView() {
         </div>
         {migrationNotes.length > 0 && (
           <div className="migration-log">
-            <strong>数据迁移记录</strong>
+            <strong>{t("settings.migrationLog")}</strong>
             {migrationNotes.map((note) => (
-              <span key={note}>{note}</span>
+              <span key={note}>{translateRuntimeMessage(note, t)}</span>
             ))}
           </div>
         )}
@@ -264,30 +287,33 @@ export default function SettingsView() {
       <Dialog
         open={restoreOpen}
         onOpenChange={setRestoreOpen}
-        title="恢复完整备份"
-        description="恢复备份将整体替换当前应用的历史、池配置与统计数据。"
+        title={t("settings.restoreTitle")}
+        description={t("settings.restoreDescription")}
         footer={
           <>
             <Button variant="quiet" onClick={() => setRestoreOpen(false)}>
-              取消
+              {t("common.actions.cancel")}
             </Button>
             <Button
               variant="danger"
-              onClick={() => {
+              onClick={async () => {
                 if (restoreState) {
+                  const restoredLocale = restoreState.ui.locale;
                   replaceState(restoreState);
+                  await setAppLocale(restoredLocale);
+                  await setApplicationWindowTitle(restoredLocale);
                   setRestoreOpen(false);
                   setRestoreState(null);
-                  setToast("备份已恢复");
+                  setToast(t("settings.restoreBackup"));
                 }
               }}
             >
-              确认替换
+              {t("settings.replaceConfirm")}
             </Button>
           </>
         }
       >
-        <p>{restoreState ? summarizeState(restoreState) : "正在校验备份文件…"}</p>
+        <p>{restoreState ? t("settings.restoreSummary", { history: restoreState.history.length, custom: restoreState.pools.customEntries.length, sessions: restoreState.sessionArchive.length }) : t("settings.restorePending")}</p>
       </Dialog>
     </div>
   );

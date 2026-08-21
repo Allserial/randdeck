@@ -1,5 +1,23 @@
 # 更新日志
 
+## 0.6.0 - 2026-08-21
+
+### English
+
+- Rebranded the public product as RandDeck while retaining `com.zhishutai.desktop`, `zhishutai-v5`, and `zhishutai.*` persistence identifiers for upgrade compatibility.
+- Added Simplified Chinese and English UI switching with bundled offline translation resources.
+- Renamed the Windows executable and release artifacts to `RandDeck`.
+- Added bilingual README, user guide, security policy, portable package contents, and SHA256 validation.
+- Added localization, Rust test, and Chromium E2E checks to CI.
+
+### 中文
+
+- 公开产品品牌统一为 RandDeck，同时保留 `com.zhishutai.desktop`、`zhishutai-v5` 和 `zhishutai.*` 持久化标识，保证升级兼容。
+- 新增简体中文和 English 切换，翻译资源随程序离线打包。
+- Windows 可执行文件和发布产物统一改为 `RandDeck` 命名。
+- 新增中英文 README、使用说明、安全策略、便携包内容和 SHA256 校验。
+- CI 新增国际化、Rust 测试和 Chromium E2E 检查。
+
 ## 0.5.0 - 2026-08-21
 
 - 重组抽取台界面，简化范围池、自定义池和骰子表达式工作流。

@@ -1,5 +1,6 @@
 import type { PoolsState, TagRule } from "./types";
 import { createId } from "./random";
+import { createRuntimeMessage, messageFromUnknown, runtimeError } from "./runtimeMessage";
 
 const MAX_TAG_EXPRESSION_LENGTH = 256;
 
@@ -13,8 +14,8 @@ type Token = { type: string; value: string | number; position: number };
 
 function tokenize(source: string): Token[] {
   const text = String(source ?? "").trim();
-  if (!text) throw new Error("标签表达式不能为空");
-  if (text.length > MAX_TAG_EXPRESSION_LENGTH) throw new Error(`标签表达式不能超过 ${MAX_TAG_EXPRESSION_LENGTH} 个字符`);
+  if (!text) throw runtimeError("errors.tagExpressionEmpty");
+  if (text.length > MAX_TAG_EXPRESSION_LENGTH) throw runtimeError("errors.tagExpressionTooLong", { count: MAX_TAG_EXPRESSION_LENGTH });
   const tokens: Token[] = [];
   let index = 0;
   while (index < text.length) {
@@ -27,11 +28,11 @@ function tokenize(source: string): Token[] {
     const identifier = text.slice(index).match(/^[A-Za-z_][A-Za-z0-9_]*/);
     if (identifier) {
       const value = identifier[0];
-      if (!["value", "in"].includes(value)) throw new Error(`第 ${index + 1} 个字符：不支持的标签标识符 ${value}`);
+      if (!["value", "in"].includes(value)) throw runtimeError("errors.unsupportedTagIdentifier", { position: index + 1, identifier: value });
       tokens.push({ type: value, value, position: index }); index += value.length; continue;
     }
     if ("()[]%!,<>".includes(char)) tokens.push({ type: char, value: char, position: index });
-    else throw new Error(`第 ${index + 1} 个字符：不支持 ${char}`);
+    else throw runtimeError("errors.unsupportedCharacter", { position: index + 1, character: char });
     index += 1;
   }
   tokens.push({ type: "eof", value: "", position: text.length });
@@ -43,13 +44,17 @@ export function parseTagExpression(source: string): TagNode {
   let position = 0;
   const peek = () => tokens[position];
   const consume = (type: string) => {
-    if (peek().type !== type) throw new Error(`第 ${peek().position + 1} 个字符：期待 ${type}，实际为 ${peek().value || "表达式结尾"}`);
+    if (peek().type !== type) throw runtimeError("errors.expectedToken", {
+      position: peek().position + 1,
+      expected: type,
+      actual: peek().value ? String(peek().value) : createRuntimeMessage("errors.expressionEnd"),
+    });
     return tokens[position++];
   };
   const primary = (): NumericNode => {
     if (peek().type === "value") { consume("value"); return { type: "value" }; }
     if (peek().type === "number") return { type: "number", value: Number(consume("number").value) };
-    throw new Error(`第 ${peek().position + 1} 个字符：期待 value 或整数`);
+    throw runtimeError("errors.expectedTagValue", { position: peek().position + 1 });
   };
   const modulo = (): NumericNode => {
     let left = primary();
@@ -67,7 +72,7 @@ export function parseTagExpression(source: string): TagNode {
       const operator = consume(peek().type).type as "==" | "!=" | ">" | ">=" | "<" | "<=";
       return { type: "compare", operator, left, right: modulo() };
     }
-    throw new Error(`第 ${peek().position + 1} 个字符：标签规则必须包含比较条件`);
+    throw runtimeError("errors.tagComparisonRequired", { position: peek().position + 1 });
   };
   const unary = (): TagNode => {
     if (peek().type === "!") { consume("!"); return { type: "not", value: unary() }; }
@@ -77,7 +82,7 @@ export function parseTagExpression(source: string): TagNode {
   const and = (): TagNode => { let node = unary(); while (peek().type === "&&") { consume("&&"); node = { type: "and", left: node, right: unary() }; } return node; };
   const or = (): TagNode => { let node = and(); while (peek().type === "||") { consume("||"); node = { type: "or", left: node, right: and() }; } return node; };
   const ast = or();
-  if (peek().type !== "eof") throw new Error(`第 ${peek().position + 1} 个字符：存在多余内容 ${peek().value}`);
+  if (peek().type !== "eof") throw runtimeError("errors.trailingContent", { position: peek().position + 1, content: String(peek().value) });
   return ast;
 }
 
@@ -86,7 +91,7 @@ export function evaluateTagExpression(ast: TagNode, value: number): boolean {
     if (node.type === "value") return value;
     if (node.type === "number") return node.value;
     const divisor = numeric(node.right);
-    if (divisor === 0) throw new Error("标签表达式不能对零取余");
+    if (divisor === 0) throw runtimeError("errors.tagModuloZero");
     return numeric(node.left) % divisor;
   };
   const evaluate = (node: TagNode): boolean => {
@@ -117,7 +122,12 @@ export function normalizeTagRules(rules: unknown): TagRule[] {
 
 export function validateTagRules(rules: TagRule[]): string {
   for (const rule of rules) {
-    try { parseTagExpression(rule.expression); } catch (error) { return `标签规则“${rule.label || "未命名"}”无效：${(error as Error).message}`; }
+    try { parseTagExpression(rule.expression); } catch (error) {
+      return createRuntimeMessage("errors.tagRuleInvalid", {
+        label: rule.label || createRuntimeMessage("errors.unnamedTag"),
+        message: messageFromUnknown(error),
+      });
+    }
   }
   return "";
 }

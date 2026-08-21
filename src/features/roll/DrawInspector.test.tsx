@@ -5,7 +5,7 @@ import { useAppStore } from "../../app/store";
 import DrawInspector from "./DrawInspector";
 
 beforeEach(() => {
-  useAppStore.setState({ ...createDefaultState(), hydrated: true, hydrationSource: "test", warnings: [], currentResults: [], previewResults: [], isDrawing: false, error: "", toast: "", revision: 0 });
+  useAppStore.setState({ ...createDefaultState("zh-CN"), hydrated: true, hydrationSource: "test", warnings: [], currentResults: [], previewResults: [], isDrawing: false, error: "", toast: "", revision: 0 });
 });
 
 describe("DrawInspector", () => {

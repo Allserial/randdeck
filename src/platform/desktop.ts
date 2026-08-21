@@ -1,9 +1,11 @@
-import type { CeremonyPhase, DrawResult, ThemeMode } from "../domain/types";
+import type { AppLocale, CeremonyPhase, DrawMode, DrawResult, ThemeMode } from "../domain/types";
 import { isTauriRuntime } from "./persistence";
 
 export interface DisplayPayload {
   results: DrawResult[];
   mode: string;
+  modeKey?: DrawMode;
+  locale: AppLocale;
   summary: string;
   theme: ThemeMode;
   animationToken: string;
@@ -48,7 +50,7 @@ export async function openDisplayWindow(mode: "normal" | "fullscreen" | "overlay
   if (!display) {
     display = new WebviewWindow("display", {
       url: "index.html?view=display",
-      title: "掷数台 · 展示",
+      title: "RandDeck · Display",
       width: 1280,
       height: 720,
       minWidth: 640,
@@ -65,6 +67,26 @@ export async function openDisplayWindow(mode: "normal" | "fullscreen" | "overlay
   await setDisplayWindowMode(mode, false);
   await display.show();
   await display.setFocus();
+}
+
+export async function setApplicationWindowTitle(locale: AppLocale): Promise<void> {
+  const title = locale === "en-US" ? "RandDeck" : "掷数台";
+  if (isTauriRuntime()) {
+    const { getCurrentWindow } = await import("@tauri-apps/api/window");
+    await getCurrentWindow().setTitle(title).catch(() => undefined);
+  } else if (typeof document !== "undefined") {
+    document.title = title;
+  }
+}
+
+export async function setDisplayWindowTitle(locale: AppLocale): Promise<void> {
+  const title = locale === "en-US" ? "RandDeck · Display" : "掷数台 · 展示";
+  if (isTauriRuntime()) {
+    const { getCurrentWindow } = await import("@tauri-apps/api/window");
+    await getCurrentWindow().setTitle(title).catch(() => undefined);
+  } else if (typeof document !== "undefined") {
+    document.title = title;
+  }
 }
 
 export async function setDisplayWindowMode(mode: "normal" | "fullscreen" | "overlay", clickThrough: boolean): Promise<void> {

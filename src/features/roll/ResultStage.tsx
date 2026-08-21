@@ -1,4 +1,5 @@
 import { useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { ArrowDownAZ, ArrowUpAZ, Ban, Copy, Dices, ListOrdered, Pin, RefreshCw, Sparkles, X } from "lucide-react";
 import clsx from "clsx";
 import { displayValue, formatResultList } from "../../lib/labels";
@@ -13,6 +14,7 @@ const EMPTY_INDEX_SET = new Set<number>();
 const DEFAULT_CEREMONY = { phase: "idle" as const, remainingSeconds: 0, revealedCount: 0, targetTransaction: null };
 
 export default function ResultStage() {
+  const { t } = useTranslation();
   const mode = useAppStore((state) => state.settings.mode);
   const settings = useAppStore((state) => state.settings);
   const results = useAppStore((state) => state.currentResults);
@@ -104,7 +106,7 @@ export default function ResultStage() {
       await copyText(text);
       setToast(message);
     } catch {
-      setError("复制失败，请检查剪贴板权限");
+      setError(t("errors.copy"));
     }
   };
 
@@ -113,21 +115,21 @@ export default function ResultStage() {
     if (!values.length) return;
     updateSettings({ excludeInput: [settings.excludeInput.trim(), values.join(",")].filter(Boolean).join(",") });
     setResultInteraction({ transactionId, selectedIndices: [] });
-    setToast(`已将 ${values.length} 个结果加入排除`);
+    setToast(t("roll.addSelectedExclude") + ` (${values.length})`);
   };
 
   const undo = () => {
-    if (!latest?.transactionId || !revertTransaction(latest.transactionId)) setError("当前结果不能事务撤销");
+    if (!latest?.transactionId || !revertTransaction(latest.transactionId)) setError(t("errors.cannotUndo"));
     else {
       clearResultInteraction();
-      setToast("已撤销上一笔抽取及其统计");
+      setToast(t("roll.undoDraw"));
     }
   };
 
   const reroll = async () => {
     const nextTransactionId = await rerollDraw(rerollIndices);
     if (!nextTransactionId) return;
-    setToast(`已重掷 ${rerollIndices.length} 项，未重算固定结果`);
+    setToast(`${t("roll.rerollSelected")} (${rerollIndices.length})`);
   };
 
   const togglePinned = () => {
@@ -138,17 +140,17 @@ export default function ResultStage() {
     setResultInteraction({ transactionId, pinnedIndices: [...next] });
   };
 
-  let stageTitle = "等待抽取";
+  let stageTitle = t("roll.waiting");
   if (ceremony.phase === "countdown") {
-    stageTitle = `倒计时 ${ceremony.remainingSeconds} 秒`;
+    stageTitle = t("roll.countdown", { seconds: ceremony.remainingSeconds });
   } else if (ceremony.phase === "revealing") {
-    stageTitle = "排名揭晓中";
+    stageTitle = t("roll.revealing");
   } else if (ceremony.phase === "finished") {
-    stageTitle = "揭晓完成";
+    stageTitle = t("roll.finished");
   } else if (isDrawing) {
-    stageTitle = "正在抽出…";
+    stageTitle = t("roll.drawing");
   } else if (results.length) {
-    stageTitle = "本次结果";
+    stageTitle = t("roll.currentResult");
   }
 
   const hasVisibleCards = isDrawing || isCeremonyActive || results.length > 0;
@@ -157,32 +159,32 @@ export default function ResultStage() {
     <section className={clsx("result-stage", `result-stage--${mode}`, isDrawing && "is-drawing")} aria-labelledby="result-stage-title">
       <div className="stage-toolbar">
         <div>
-          <span className="section-label">结果舞台</span>
+          <span className="section-label">{t("roll.stage")}</span>
           <h2 id="result-stage-title">{stageTitle}</h2>
         </div>
         {!isCeremonyActive && results.length > 0 && !isDrawing && (
           <div className="stage-actions">
             <div className="compact-segment">
-              <IconButton label="原顺序" className={sort === "original" ? "active" : ""} onClick={() => setSort("original")}>
+              <IconButton label={t("roll.originalOrder")} className={sort === "original" ? "active" : ""} onClick={() => setSort("original")}>
                 <ListOrdered size={16} />
               </IconButton>
-              <IconButton label="升序" className={sort === "asc" ? "active" : ""} onClick={() => setSort("asc")}>
+              <IconButton label={t("roll.ascending")} className={sort === "asc" ? "active" : ""} onClick={() => setSort("asc")}>
                 <ArrowUpAZ size={16} />
               </IconButton>
-              <IconButton label="降序" className={sort === "desc" ? "active" : ""} onClick={() => setSort("desc")}>
+              <IconButton label={t("roll.descending")} className={sort === "desc" ? "active" : ""} onClick={() => setSort("desc")}>
                 <ArrowDownAZ size={16} />
               </IconButton>
             </div>
-            <IconButton label="复制全部结果" onClick={() => void copy(formatResultList(results, copyFormat), "已复制全部结果")}>
+            <IconButton label={t("roll.copyAll")} onClick={() => void copy(formatResultList(results, copyFormat), t("roll.copiedAll"))}>
               <Copy size={16} />
             </IconButton>
           </div>
         )}
         {isCeremonyActive && (
           <div className="stage-actions">
-            <button type="button" className="ceremony-exit-btn" onClick={cancelCeremony} title="终止仪式">
+            <button type="button" className="ceremony-exit-btn" onClick={cancelCeremony} title={t("roll.stopCeremony")}>
               <X size={15} />
-              终止仪式
+              {t("roll.stopCeremony")}
             </button>
           </div>
         )}
@@ -213,7 +215,7 @@ export default function ResultStage() {
         {ceremony.phase === "countdown" && (
           <div className="ceremony-countdown-hero">
             <div className="ceremony-big-number">{ceremony.remainingSeconds}</div>
-            <p>即将揭晓结果…</p>
+            <p>{t("roll.aboutToReveal")}</p>
           </div>
         )}
 
@@ -221,7 +223,7 @@ export default function ResultStage() {
         {(ceremony.phase === "revealing" || ceremony.phase === "finished") && (
           <div className="ceremony-title-banner">
             <Sparkles size={20} className="banner-sparkle" />
-            <span>{ceremony.phase === "finished" ? "排 名 揭 晓 完 毕" : "排 名 揭 晓"}</span>
+            <span>{ceremony.phase === "finished" ? t("roll.revealDone") : t("roll.revealTitle")}</span>
             <Sparkles size={20} className="banner-sparkle" />
           </div>
         )}
@@ -232,8 +234,8 @@ export default function ResultStage() {
             <span className="empty-die" aria-hidden="true">
               <Dices size={48} />
             </span>
-            <strong>按空格或右侧生成</strong>
-            <p>从候选池中抽出真正的随机数</p>
+            <strong>{t("roll.emptyTitle")}</strong>
+            <p>{t("roll.emptyDescription")}</p>
           </div>
         )}
 
@@ -255,7 +257,7 @@ export default function ResultStage() {
             }
             cardRefs={cardRefs}
             onSelect={(index) => !isDrawing && !isCeremonyActive && toggleSelection(sorted[index].originalIndex)}
-            onCopy={(result) => void copy(String(displayValue(result)), `已复制 ${displayValue(result)}`)}
+            onCopy={(result) => void copy(String(displayValue(result)), t("roll.copiedResult", { value: displayValue(result) }))}
           />
         )}
 
@@ -271,8 +273,8 @@ export default function ResultStage() {
               tabIndex={ceremony.phase === "finished" ? 0 : -1}
               onClick={finishCeremonyToNormal}
             >
-              <span>返回抽取台</span>
-              <small className="btn-key-hint">空格</small>
+              <span>{t("roll.return")}</span>
+              <small className="btn-key-hint">{t("roll.keyboardSpace")}</small>
             </Button>
           </div>
         )}
@@ -281,15 +283,15 @@ export default function ResultStage() {
       {/* 仪式状态下的控制栏 */}
       {isCeremonyActive && (
         <div className="stage-bottom-bar ceremony-status-bar">
-          {ceremony.phase === "countdown" && <span>倒计时中 · 按 Esc 随时终止</span>}
+          {ceremony.phase === "countdown" && <span>{t("roll.countdownStatus")}</span>}
           {ceremony.phase === "revealing" && (
             <>
-              <span>正在逐张揭晓 ({ceremony.revealedCount}/{ceremony.targetTransaction?.results.length || settings.count})</span>
-              <button type="button" onClick={skipCeremonyReveal}>立即全部揭晓 (空格)</button>
+              <span>{t("roll.revealingStatus", { current: ceremony.revealedCount, total: ceremony.targetTransaction?.results.length || settings.count })}</span>
+              <button type="button" onClick={skipCeremonyReveal}>{t("roll.revealAll")}</button>
             </>
           )}
           {ceremony.phase === "finished" && (
-            <span>✨ 揭晓完毕！可按空格或点击主按钮继续</span>
+            <span>✨ {t("roll.finishedStatus")}</span>
           )}
         </div>
       )}
@@ -304,29 +306,29 @@ export default function ResultStage() {
             <>
               <span>
                 {selected.size
-                  ? `已选择 ${selected.size} 项${pinned.size ? ` · 固定 ${pinned.size} 项` : ""}`
+                  ? pinned.size ? t("roll.selectedPinned", { selected: selected.size, pinned: pinned.size }) : t("roll.selected", { count: selected.size })
                   : pinned.size
-                    ? `已固定 ${pinned.size} 项`
-                    : "点击数字卡牌可选择并操作"}
+                    ? t("roll.pinned", { count: pinned.size })
+                    : t("roll.selectHint")}
               </span>
               <button type="button" disabled={!rerollIndices.length} onClick={() => void reroll()}>
                 <RefreshCw size={14} />
-                {selected.size ? "重掷所选" : "重掷未固定"}
+                {selected.size ? t("roll.rerollSelected") : t("roll.rerollUnpinned")}
               </button>
               <button type="button" disabled={!selected.size} onClick={addExclusions}>
                 <Ban size={14} />
-                加入排除
+                {t("roll.addSelectedExclude")}
               </button>
               <button type="button" disabled={!selected.size} onClick={togglePinned}>
                 <Pin size={14} />
-                {selected.size && [...selected].every((index) => pinned.has(index)) ? "取消固定" : "固定所选"}
+                {selected.size && [...selected].every((index) => pinned.has(index)) ? t("roll.unpinSelected") : t("roll.pinSelected")}
               </button>
               <button type="button" onClick={undo}>
-                撤销抽取
+                {t("roll.undoDraw")}
               </button>
             </>
           ) : (
-            <span className="stage-bottom-hint">抽取后可在此重掷、排除或固定卡牌</span>
+            <span className="stage-bottom-hint">{t("roll.stageHint")}</span>
           )}
         </div>
       )}

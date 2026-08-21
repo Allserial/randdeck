@@ -3,8 +3,10 @@ import { executeDraw, prepareDraw, prepareShuffle } from "../domain/draw";
 import { WebCryptoRandomSource } from "../domain/random";
 import { playCountdownTick, playDrawSound, startCountdownDrums, stopCountdownDrums } from "../platform/audio";
 import { publishDisplayState } from "../platform/desktop";
-import { MODE_LABELS } from "../lib/labels";
+import { modeLabel } from "../lib/labels";
 import { snapshotState, useAppStore } from "./store";
+import i18n from "i18next";
+import { messageFromUnknown, runtimeError } from "../domain/runtimeMessage";
 
 let activeGeneration: Promise<string | null> | null = null;
 let ceremonyCountdownTimer: number | undefined;
@@ -31,16 +33,16 @@ export async function publishCurrentDisplay(overrides: { hidden?: boolean } = {}
 
   if (ceremony.phase === "countdown") {
     results = [];
-    summary = `倒计时 ${ceremony.remainingSeconds} 秒`;
+    summary = i18n.t("roll.countdown", { seconds: ceremony.remainingSeconds });
   } else if (ceremony.phase === "revealing") {
     results = (ceremony.targetTransaction?.results || []).slice(0, ceremony.revealedCount);
-    summary = `正在揭晓 (${ceremony.revealedCount}/${ceremony.targetTransaction?.results.length || 0})`;
+    summary = i18n.t("roll.revealingStatus", { current: ceremony.revealedCount, total: ceremony.targetTransaction?.results.length || 0 });
   } else if (ceremony.phase === "finished") {
     results = ceremony.targetTransaction?.results || state.currentResults;
     summary = results.map((result) => result.total).join(", ");
   } else if (state.isDrawing || overrides.hidden) {
     results = [];
-    summary = "正在抽出…";
+    summary = i18n.t("roll.drawing");
   } else {
     results = state.currentResults;
     summary = results.map((result) => result.total).join(", ");
@@ -48,7 +50,9 @@ export async function publishCurrentDisplay(overrides: { hidden?: boolean } = {}
 
   await publishDisplayState({
     results,
-    mode: MODE_LABELS[state.settings.mode],
+    mode: modeLabel(state.settings.mode, state.ui.locale),
+    modeKey: state.settings.mode,
+    locale: state.ui.locale,
     summary,
     theme: state.settings.appearance.theme,
     animationToken:
@@ -86,13 +90,13 @@ function runGeneration(countOverride?: number, partial?: PartialDrawContext, shu
         );
         plan.candidateEntries = plan.candidateEntries.filter((entry) => !retainedValues.has(entry.value));
         if (plan.candidateEntries.length < plan.count) {
-          throw new Error(`当前仅剩 ${plan.candidateEntries.length} 个可抽取数字，不能补抽 ${plan.count} 个`);
+          throw runtimeError("errors.notEnough", { available: plan.candidateEntries.length, count: plan.count });
         }
       }
       const transaction = executeDraw(plan, new WebCryptoRandomSource(), null);
       if (partial) {
         const replacements = transaction.results;
-        if (replacements.length !== partial.generatedIndices.length) throw new Error("重掷结果数量与所选项不一致");
+        if (replacements.length !== partial.generatedIndices.length) throw runtimeError("errors.rerollMismatch");
         let replacementIndex = 0;
         transaction.results = partial.resultTemplate.map((result) => result ?? replacements[replacementIndex++]);
         transaction.configSnapshot = { ...transaction.configSnapshot, count: partial.resultTemplate.length };
@@ -147,7 +151,7 @@ function runGeneration(countOverride?: number, partial?: PartialDrawContext, shu
       current.setDrawing(false);
       current.setPreviewResults([]);
       current.setResultInteraction({ rollingIndices: null });
-      current.setError((error as Error).message || "生成失败");
+      current.setError(messageFromUnknown(error, "errors.drawFailed"));
       return null;
     }
   })().finally(() => {
@@ -173,8 +177,8 @@ export function generateDraw(countOverride?: number): Promise<string | null> {
   if (pinnedSourceIndices.length >= targetCount) {
     state.setError(
       pinnedSourceIndices.length === targetCount
-        ? "本次结果已全部固定，请先取消固定再生成"
-        : `固定结果有 ${pinnedSourceIndices.length} 项，超过本次抽取数量 ${targetCount}`
+        ? runtimeError("errors.fixedAll").message
+        : runtimeError("errors.fixedTooMany", { fixed: pinnedSourceIndices.length, count: targetCount }).message
     );
     return Promise.resolve(null);
   }
@@ -213,7 +217,7 @@ export function rerollDraw(indices: number[]): Promise<string | null> {
     .filter((index) => Number.isInteger(index) && index >= 0 && index < state.currentResults.length)
     .sort((left, right) => left - right);
   if (!unique.length || !state.drawState.lastTransactionId) {
-    state.setError("请先选择需要重掷的结果");
+    state.setError(runtimeError("errors.selectReroll").message);
     return Promise.resolve(null);
   }
   const selected = new Set(unique);
@@ -241,7 +245,7 @@ export async function startCountdownCeremony(seconds: number): Promise<void> {
     transaction = executeDraw(plan, new WebCryptoRandomSource(), null);
     transaction.receipt = await createReceipt(transaction);
   } catch (error) {
-    store.setError((error as Error).message || "生成失败");
+    store.setError(messageFromUnknown(error, "errors.drawFailed"));
     return;
   }
 

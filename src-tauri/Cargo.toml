@@ -1,17 +1,17 @@
 [package]
-name = "zhishutai"
-version = "0.5.0"
-description = "掷数台本地随机数工作台"
-authors = ["掷数台本地维护"]
-license = ""
-repository = ""
+name = "randdeck"
+version = "0.6.0"
+description = "Offline random draw workbench for Windows"
+authors = ["RandDeck contributors"]
+license = "MIT"
+repository = "https://github.com/Allserial/randdeck"
 edition = "2021"
 rust-version = "1.77.2"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [lib]
-name = "zhishutai_lib"
+name = "randdeck_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
 [build-dependencies]
