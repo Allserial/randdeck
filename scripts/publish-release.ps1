@@ -11,6 +11,15 @@ $portableSource = Join-Path $root "src-tauri\target\release\randdeck.exe"
 $nsisDir = Join-Path $root "src-tauri\target\release\bundle\nsis"
 $verificationPath = Join-Path $root "reports\v$Version-verification.json"
 
+function Get-SafeRelativePath([string]$BasePath, [string]$TargetPath) {
+  $baseFull = [System.IO.Path]::GetFullPath($BasePath).TrimEnd("\") + "\"
+  $targetFull = [System.IO.Path]::GetFullPath($TargetPath)
+  if (!$targetFull.StartsWith($baseFull, [System.StringComparison]::OrdinalIgnoreCase)) {
+    throw "相对路径目标越界：$targetFull"
+  }
+  return $targetFull.Substring($baseFull.Length)
+}
+
 if (!(Test-Path -LiteralPath $portableSource)) { throw "便携版构建文件不存在：$portableSource" }
 if (!(Test-Path -LiteralPath $nsisDir)) { throw "NSIS 构建目录不存在：$nsisDir" }
 $installerSource = Get-ChildItem -LiteralPath $nsisDir -File -Filter "*$Version*setup.exe" | Sort-Object LastWriteTimeUtc -Descending | Select-Object -First 1
@@ -54,7 +63,7 @@ function Get-Artifact([string]$Path, [string]$Kind, [string]$WebView2Mode) {
   $item = Get-Item -LiteralPath $Path
   [pscustomobject]@{
     kind = $Kind
-    path = [System.IO.Path]::GetRelativePath($releaseRoot, $item.FullName)
+    path = Get-SafeRelativePath $releaseRoot $item.FullName
     fileName = $item.Name
     bytes = $item.Length
     sha256 = (Get-FileHash -LiteralPath $item.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
@@ -124,7 +133,7 @@ foreach ($key in $webView2Keys) {
 
 $tauriCommand = Join-Path $root "node_modules\.bin\tauri.cmd"
 $verificationArtifact = [pscustomobject]@{
-  path = [System.IO.Path]::GetRelativePath($root, $verificationPath)
+  path = Get-SafeRelativePath $root $verificationPath
   sha256 = (Get-FileHash -LiteralPath $verificationPath -Algorithm SHA256).Hash.ToLowerInvariant()
   sourceCommit = $verification.sourceCommit
 }
