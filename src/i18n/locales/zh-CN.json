@@ -1,0 +1,31 @@
+{
+  "app": {
+    "brand": "掷数台",
+    "brandEnglish": "RandDeck",
+    "description": "离线随机抽取工具"
+  },
+  "common": {
+    "actions": {
+      "apply": "应用",
+      "cancel": "取消",
+      "close": "关闭",
+      "confirm": "确认",
+      "copy": "复制",
+      "delete": "删除",
+      "reset": "重置",
+      "save": "保存"
+    }
+  },
+  "navigation": {
+    "roll": "抽取台",
+    "insights": "数据洞察",
+    "settings": "设置"
+  },
+  "settings": {
+    "language": {
+      "label": "语言",
+      "zhCN": "简体中文",
+      "enUS": "English"
+    }
+  }
+}

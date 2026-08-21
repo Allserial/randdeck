@@ -1,0 +1,31 @@
+{
+  "app": {
+    "brand": "RandDeck",
+    "brandEnglish": "RandDeck",
+    "description": "Offline random drawing tool"
+  },
+  "common": {
+    "actions": {
+      "apply": "Apply",
+      "cancel": "Cancel",
+      "close": "Close",
+      "confirm": "Confirm",
+      "copy": "Copy",
+      "delete": "Delete",
+      "reset": "Reset",
+      "save": "Save"
+    }
+  },
+  "navigation": {
+    "roll": "Roll Deck",
+    "insights": "Insights",
+    "settings": "Settings"
+  },
+  "settings": {
+    "language": {
+      "label": "Language",
+      "zhCN": "Simplified Chinese",
+      "enUS": "English"
+    }
+  }
+}

@@ -1,9 +1,10 @@
 import { z } from "zod";
-import type { AppState, CountByMode, CountMemoryMode, DrawMode, DrawResult, DrawSession, DrawSettings, HistoryEntry, PoolEntry, PoolsState, Preset, UiState } from "../domain/types";
+import type { AppLocale, AppState, CountByMode, CountMemoryMode, DrawMode, DrawResult, DrawSession, DrawSettings, HistoryEntry, PoolEntry, PoolsState, Preset, UiState } from "../domain/types";
 import { createId, parseIntegerList } from "../domain/random";
 import { createEmptyStats, normalizeStats } from "../domain/stats";
 import { normalizeTagRules } from "../domain/tags";
 import { normalizeWeightedEntries } from "../domain/weighted";
+import { detectLocaleFromLanguages, normalizePersistedLocale } from "../i18n/locale";
 
 export const STATE_VERSION = 5 as const;
 export const STORAGE_KEY_V5 = "zhishutai.state.v5";
@@ -19,6 +20,7 @@ export const PRESET_LIMIT = 50;
 export const SESSION_LIMIT = 50;
 
 const DEFAULT_UI: UiState = {
+  locale: "zh-CN",
   activeView: "roll",
   inspectorOpen: true,
   insightsTab: "overview",
@@ -48,7 +50,12 @@ export const DEFAULT_SETTINGS: DrawSettings = {
 
 export const DEFAULT_POOLS: PoolsState = { customEntries: [], weightedEntries: [], rangeTagRules: [], expressionTagRules: [] };
 
-export function createDefaultState(): AppState {
+function detectFreshStateLocale(): AppLocale {
+  if (typeof navigator === "undefined") return "en-US";
+  return detectLocaleFromLanguages(navigator.languages, navigator.language);
+}
+
+export function createDefaultState(locale: AppLocale = detectFreshStateLocale()): AppState {
   return {
     version: STATE_VERSION,
     settings: structuredClone(DEFAULT_SETTINGS),
@@ -60,7 +67,7 @@ export function createDefaultState(): AppState {
     drawState: { poolFingerprint: "", usedValues: [], lastTransactionId: null, activePresetId: null },
     activeSession: null,
     sessionArchive: [],
-    ui: structuredClone(DEFAULT_UI),
+    ui: { ...structuredClone(DEFAULT_UI), locale },
     migrationNotes: [],
   };
 }
@@ -194,6 +201,7 @@ export const AppStateV5Schema = z.object({
   activeSession: SessionSchema.nullable(),
   sessionArchive: z.array(SessionSchema).max(SESSION_LIMIT),
   ui: z.object({
+    locale: z.enum(["zh-CN", "en-US"]),
     activeView: z.enum(["roll", "insights", "settings"]),
     inspectorOpen: z.boolean(),
     insightsTab: z.enum(["overview", "history", "probability"]),
@@ -411,12 +419,13 @@ function normalizePresets(value: unknown): Preset[] {
     .slice(0, PRESET_LIMIT);
 }
 
-function normalizeUi(value: unknown, countByMode = DEFAULT_UI.countByMode): UiState {
+function normalizeUi(value: unknown, countByMode = DEFAULT_UI.countByMode, localeFallback: AppLocale = "zh-CN"): UiState {
   const source = value && typeof value === "object" ? (value as Record<string, any>) : {};
   const compareIds = Array.isArray(source.compareIds) ? source.compareIds.map(String).filter(Boolean).slice(0, 2) : [];
   const activeView = (["roll", "insights", "settings"].includes(source.activeView) ? source.activeView : "roll") as UiState["activeView"];
   const insightsTab = (["overview", "history", "probability"].includes(source.insightsTab) ? source.insightsTab : "overview") as UiState["insightsTab"];
   return {
+    locale: normalizePersistedLocale(source.locale, localeFallback),
     activeView,
     inspectorOpen: source.inspectorOpen !== false,
     insightsTab,
@@ -490,7 +499,9 @@ export function migrateToV5(value: unknown, sourceLabel = "未知来源"): AppSt
   }
   if (![1, 2, 3, 4, 5].includes(version)) throw new Error("不支持的数据版本");
 
-  const next = createDefaultState();
+  // A persisted state without a locale is legacy data, so it must not inherit
+  // the current browser language during migration.
+  const next = createDefaultState("zh-CN");
   next.settings = normalizeSettings(source.settings);
   const countMemory = resolveCountByMode(source.ui?.countByMode);
   next.settings = { ...next.settings, count: countMemory.value[countMemoryMode(next.settings.mode)] };
@@ -526,7 +537,7 @@ export function migrateToV5(value: unknown, sourceLabel = "未知来源"): AppSt
     next.sessionArchive = rawArchive.slice(0, SESSION_LIMIT);
   }
 
-  next.ui = normalizeUi(source.ui, countMemory.value);
+  next.ui = normalizeUi(source.ui, countMemory.value, "zh-CN");
   next.migrationNotes = liftNotes(source, sourceLabel, version, countMemory.reset);
 
   const parsed = AppStateV5Schema.safeParse(next);

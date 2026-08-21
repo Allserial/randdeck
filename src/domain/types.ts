@@ -1,6 +1,7 @@
 export type DrawMode = "range" | "custom" | "expression" | "weighted";
 export type ActiveDrawMode = "range" | "custom" | "expression";
 export type CountMemoryMode = ActiveDrawMode;
+export type AppLocale = "zh-CN" | "en-US";
 export type AppView = "roll" | "insights" | "settings";
 export type ThemeMode = "dark" | "light" | "contrast";
 export type MotionLevel = "instant" | "standard" | "ceremony";
@@ -250,6 +251,7 @@ export interface CountByMode {
 }
 
 export interface UiState {
+  locale: AppLocale;
   activeView: AppView;
   inspectorOpen: boolean;
   insightsTab: InsightsTab;
