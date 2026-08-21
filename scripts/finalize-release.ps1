@@ -1,4 +1,4 @@
-param(
+﻿param(
   [string]$Version = "0.6.0"
 )
 

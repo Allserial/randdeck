@@ -1,4 +1,4 @@
-param(
+﻿param(
   [string]$ArtifactRoot = "",
   [string]$BaseRef = "origin/main"
 )
