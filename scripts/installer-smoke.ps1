@@ -103,8 +103,8 @@ function Invoke-InstalledUninstaller([string]$Directory) {
   return $process.ExitCode
 }
 
-$baselineEntries = Get-UninstallEntries
-$baselineShortcuts = Get-ProductShortcuts
+$baselineEntries = @(Get-UninstallEntries)
+$baselineShortcuts = @(Get-ProductShortcuts)
 $runningProcesses = @(Get-Process -Name "randdeck", "zhishutai" -ErrorAction SilentlyContinue)
 $stateExisted = Test-Path -LiteralPath $appDataDir
 $stateHashBefore = $null
@@ -146,6 +146,7 @@ $report = [ordered]@{
   singleUninstallEntry = $false
   uninstallDisplayName = $null
   uninstallDisplayVersion = $null
+  uninstallEntriesAfterUpgrade = @()
   oldShortcutsRemoved = $false
   newShortcutCount = 0
   statePreservedAcrossUpgrade = $false
@@ -181,8 +182,18 @@ try {
   $sentinelHash = (Get-FileHash -LiteralPath $sentinelPath -Algorithm SHA256).Hash.ToLowerInvariant()
 
   $report.installExitCode = Invoke-Installer $installer $installDir
-  $entriesAfterUpgrade = Get-UninstallEntries
-  $shortcutsAfterUpgrade = Get-ProductShortcuts
+  $entriesAfterUpgrade = @(Get-UninstallEntries)
+  $report.uninstallEntriesAfterUpgrade = @(
+    $entriesAfterUpgrade | ForEach-Object {
+      [ordered]@{
+        key = $_.key
+        name = $_.name
+        version = $_.version
+        installLocation = $_.installLocation
+      }
+    }
+  )
+  $shortcutsAfterUpgrade = @(Get-ProductShortcuts)
   $newShortcuts = @($shortcutsAfterUpgrade | Where-Object { $baselineShortcuts -notcontains $_ })
   $oldNewShortcuts = @($newShortcuts | Where-Object { [System.IO.Path]::GetFileNameWithoutExtension($_) -match "^(掷数台|zhishutai)$" })
 
@@ -205,8 +216,8 @@ try {
 
   $report.uninstallExitCode = Invoke-InstalledUninstaller $installDir
   Start-Sleep -Seconds 1
-  $entriesAfterRemove = Get-UninstallEntries
-  $shortcutsAfterRemove = Get-ProductShortcuts
+  $entriesAfterRemove = @(Get-UninstallEntries)
+  $shortcutsAfterRemove = @(Get-ProductShortcuts)
   $report.uninstallEntryRemoved = $entriesAfterRemove.Count -eq 0
   $report.shortcutsRemoved = @($newShortcuts | Where-Object { $shortcutsAfterRemove -contains $_ }).Count -eq 0
 
