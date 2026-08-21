@@ -58,8 +58,8 @@ Tauri 开发与构建：
 
 ```powershell
 npm run tauri:dev
-npm run tauri:build:portable
 npm run tauri:build:offline
+npm run tauri:build:portable
 ```
 
 ## 本地数据与兼容性

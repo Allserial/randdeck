@@ -58,8 +58,8 @@ Tauri development and builds:
 
 ```powershell
 npm run tauri:dev
-npm run tauri:build:portable
 npm run tauri:build:offline
+npm run tauri:build:portable
 ```
 
 ## Local data and compatibility

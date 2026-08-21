@@ -1,4 +1,4 @@
-param(
+﻿param(
   [string]$Version = "0.6.0"
 )
 
@@ -49,6 +49,7 @@ foreach ($gate in $gates) {
 
 $runtimePath = Join-Path $reportDir "tauri-runtime\runtime-smoke.json"
 $sourceCommit = (& git -C $root rev-parse HEAD 2>$null).Trim()
+$sourceBranch = (& git -C $root branch --show-current 2>$null).Trim()
 $runtime = if (Test-Path -LiteralPath $runtimePath) {
   $runtimeReport = Get-Content -Raw -LiteralPath $runtimePath | ConvertFrom-Json
   $runtimeHash = (Get-FileHash -LiteralPath $runtimePath -Algorithm SHA256).Hash.ToLowerInvariant()
@@ -69,6 +70,7 @@ $report = [pscustomobject]@{
   version = $Version
   generatedAt = (Get-Date).ToUniversalTime().ToString("o")
   sourceCommit = $sourceCommit
+  sourceBranch = $sourceBranch
   gates = $results
   tauriRuntime = $runtime
   passed = (($results | Where-Object status -ne "passed").Count -eq 0 -and $runtime.status -eq "passed")

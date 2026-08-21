@@ -30,6 +30,18 @@ if (!$verification.passed) { throw "发布验证报告未通过，停止整理�
 
 $sourceCommit = ((& git -C $root rev-parse HEAD 2>$null) -join "").Trim()
 $branch = ((& git -C $root branch --show-current 2>$null) -join "").Trim()
+$package = Get-Content -Raw -LiteralPath (Join-Path $root "package.json") | ConvertFrom-Json
+$tauriConfig = Get-Content -Raw -LiteralPath (Join-Path $root "src-tauri\tauri.conf.json") | ConvertFrom-Json
+$cargoText = Get-Content -Raw -LiteralPath (Join-Path $root "src-tauri\Cargo.toml")
+$cargoVersionMatch = [regex]::Match($cargoText, '(?m)^version\s*=\s*"([^"]+)"')
+if ($branch -ne "main") { throw "正式发布只能从 main 分支生成，当前分支：$branch" }
+if ($verification.schema -ne "zhishutai.verification.v1") { throw "发布验证报告 schema 不兼容。" }
+if ([string]$verification.version -ne $Version) { throw "发布验证报告版本与目标版本不一致。" }
+if ([string]$verification.sourceCommit -ne $sourceCommit) { throw "发布验证报告不属于当前源码 commit。" }
+if ($verification.PSObject.Properties.Name -notcontains "sourceBranch" -or [string]$verification.sourceBranch -ne $branch) { throw "发布验证报告不属于当前分支。" }
+if ([string]$package.version -ne $Version -or [string]$tauriConfig.version -ne $Version -or !$cargoVersionMatch.Success -or $cargoVersionMatch.Groups[1].Value -ne $Version) {
+  throw "package.json、Cargo.toml、tauri.conf.json 与发布版本不一致。"
+}
 $statusBefore = ((& git -C $root status --porcelain --untracked-files=normal -- . ":(exclude)releases/$Version" 2>$null) -join "`n").Trim()
 if ($statusBefore) { throw "源码工作树不是干净状态，停止发布：`n$statusBefore" }
 
@@ -87,7 +99,6 @@ if (Test-Path -LiteralPath $previousInstaller) {
   $installerDeltaMiB = [math]::Round(($installer.bytes - (Get-Item -LiteralPath $previousInstaller).Length) / 1MB, 2)
 }
 
-$package = Get-Content -Raw -LiteralPath (Join-Path $root "package.json") | ConvertFrom-Json
 $directNames = @($package.dependencies.PSObject.Properties.Name) + @($package.devDependencies.PSObject.Properties.Name) | Sort-Object -Unique
 $npmDependencies = foreach ($name in $directNames) {
   $packagePath = Join-Path $root "node_modules\$name\package.json"

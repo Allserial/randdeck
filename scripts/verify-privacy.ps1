@@ -18,6 +18,7 @@ $patterns = @(
   'AKIA[0-9A-Z]{16}',
   'BEGIN (RSA |EC |OPENSSH )?PRIVATE KEY'
 ) | Where-Object { $_ }
+$emailPattern = '\b[A-Za-z0-9._%+-]+@[A-Za-z][A-Za-z0-9.-]*\.[A-Za-z]{2,}\b'
 
 $violations = [System.Collections.Generic.List[string]]::new()
 
@@ -26,27 +27,30 @@ foreach ($pattern in $patterns) {
   foreach ($file in $files) { $violations.Add("tracked:$file") }
 }
 
-$baseRefName = if ($BaseRef.StartsWith("origin/", [System.StringComparison]::OrdinalIgnoreCase)) {
-  "refs/remotes/$BaseRef"
-} else {
-  $BaseRef
-}
-& git -C $root show-ref --verify --quiet $baseRefName
-if ($LASTEXITCODE -ne 0) {
-  throw "隐私扫描基准不存在：$BaseRef。CI 必须使用 fetch-depth: 0。"
+foreach ($match in @(& git -C $root grep -I -n -E -- $emailPattern 2>$null)) {
+  if ($match -notmatch '@users\.noreply\.github\.com\b') { $violations.Add("tracked-email") }
 }
 
-$headCommitOutput = @(& git -C $root rev-parse --verify --quiet "${HeadRef}^{commit}" 2>$null)
-$headCommitExitCode = $LASTEXITCODE
-$headCommit = $headCommitOutput[0]
-if ($headCommitExitCode -ne 0 -or !$headCommit) {
-  throw "隐私扫描目标不存在：$HeadRef。"
+function Resolve-GitCommit([string]$Reference, [string]$Label) {
+  if ([string]::IsNullOrWhiteSpace($Reference)) { throw "隐私扫描$Label为空。" }
+  $output = @(& git -C $root rev-parse --verify --quiet "${Reference}^{commit}" 2>$null)
+  $exitCode = $LASTEXITCODE
+  $commit = $output[0]
+  if ($exitCode -ne 0 -or !$commit) {
+    throw "隐私扫描$Label不存在：$Reference。CI 必须使用 fetch-depth: 0。"
+  }
+  return $commit
 }
 
-$historyRange = "$baseRefName..$headCommit"
+$baseCommit = Resolve-GitCommit $BaseRef "基准"
+$headCommit = Resolve-GitCommit $HeadRef "目标"
+$historyRange = "$baseCommit..$headCommit"
 $history = (& git -C $root log -p --no-ext-diff $historyRange -- . 2>$null) -join "`n"
 foreach ($pattern in $patterns) {
   if ($history -match $pattern) { $violations.Add("history:$historyRange") }
+}
+foreach ($match in [regex]::Matches($history, $emailPattern)) {
+  if ($match.Value -notmatch '@users\.noreply\.github\.com$') { $violations.Add("history-email:$historyRange") }
 }
 
 $commitEmails = @(& git -C $root log --format=%ae $historyRange 2>$null | Where-Object { $_ })
