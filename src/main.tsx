@@ -4,6 +4,7 @@ import App from "./App";
 import DisplayView from "./features/display/DisplayView";
 import { initializeStore, useAppStore } from "./app/store";
 import { initializeI18n } from "./i18n";
+import { translateRuntimeMessage } from "./i18n/messages";
 import i18n from "i18next";
 import "./styles/index.css";
 
@@ -16,7 +17,10 @@ async function start() {
     await initializeI18n(useAppStore.getState().ui.locale);
     root.render(<StrictMode><App /></StrictMode>);
   }
-  catch (error) { root.render(<main className="fatal-start"><h1>{i18n.t("app.fatalStart")}</h1><p>{(error as Error).message}</p><button type="button" onClick={() => location.reload()}>{i18n.t("app.retry")}</button></main>); }
+  catch (error) {
+    const message = error instanceof Error ? translateRuntimeMessage(error.message, i18n.t.bind(i18n)) : i18n.t("errors.unknown");
+    root.render(<main className="fatal-start"><h1>{i18n.t("app.fatalStart")}</h1><p>{message}</p><button type="button" onClick={() => location.reload()}>{i18n.t("app.retry")}</button></main>);
+  }
 }
 
 void start();

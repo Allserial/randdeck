@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { RandomSource } from "./random";
 import { describeDiceExpression, evaluateDiceExpression, parseDiceExpression } from "./dice";
+import { parseRuntimeMessage } from "./runtimeMessage";
 
 class SequenceSource implements RandomSource {
   constructor(private values: number[]) {}
@@ -26,11 +27,16 @@ describe("dice AST", () => {
   });
 
   it("rejects unsafe syntax and division by zero", () => {
-    expect(() => parseDiceExpression("window.alert(1)")).toThrow(/不支持/);
-    expect(() => evaluateDiceExpression(parseDiceExpression("1/0"), new SequenceSource([]))).toThrow(/除以零/);
+    let unsafeError: unknown;
+    let divisionError: unknown;
+    try { parseDiceExpression("window.alert(1)"); } catch (error) { unsafeError = error; }
+    try { evaluateDiceExpression(parseDiceExpression("1/0"), new SequenceSource([])); } catch (error) { divisionError = error; }
+    expect(parseRuntimeMessage((unsafeError as Error).message)?.key).toBe("errors.unsupportedDiceIdentifier");
+    expect(parseRuntimeMessage((divisionError as Error).message)?.key).toBe("errors.divideByZero");
   });
 
   it("describes parsed expressions", () => {
     expect(describeDiceExpression(parseDiceExpression("2d6+3"))).toContain("投掷 2 个 6 面骰");
+    expect(describeDiceExpression(parseDiceExpression("2d6+3"), "en-US")).toBe("roll 2 d6 plus constant 3");
   });
 });

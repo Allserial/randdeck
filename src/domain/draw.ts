@@ -5,10 +5,7 @@ import { createStatsDelta } from "./stats";
 import { tagsForValue, validateTagRules } from "./tags";
 import { drawWeightedEntries, filterWeightedEntries, validateWeightedEntries } from "./weighted";
 import { SHUFFLE_ALGORITHM, SHUFFLE_LIMIT, shuffleEntries } from "./shuffle";
-
-export class DrawValidationError extends Error {
-  constructor(message: string) { super(message); this.name = "DrawValidationError"; }
-}
+import { runtimeError } from "./runtimeMessage";
 
 function candidateFingerprint(state: AppState): string {
   const { settings, pools } = state;
@@ -38,41 +35,41 @@ export function prepareDraw(state: AppState): DrawPlan {
   const poolsSnapshot = structuredClone(state.pools);
   if (state.settings.mode === "expression") {
     const ruleError = validateTagRules(state.pools.expressionTagRules);
-    if (ruleError) throw new DrawValidationError(ruleError);
+    if (ruleError) throw new Error(ruleError);
     const expressionAst = parseDiceExpression(state.settings.expression.source);
     const count = state.settings.expression.evaluation === "single" ? 1 : clampCount(state.settings.count, 50);
     return { mode: "expression", count, configSnapshot, poolsSnapshot, poolFingerprint: fingerprint, sourceCount: 0, candidateEntries: [], candidateSpec: candidateSpec(state, []), expressionAst, presetId: state.drawState.activePresetId, operationKind: "draw" };
   }
 
   const excluded = parseExclusionInput(state.settings.excludeInput);
-  if (excluded.invalidTokens.length) throw new DrawValidationError(`排除项包含无效内容：${excluded.invalidTokens.join("、")}`);
+  if (excluded.invalidTokens.length) throw runtimeError("errors.invalidExclusion", { tokens: excluded.invalidTokens.join(", ") });
   let sourceEntries: WeightedEntry[];
   if (state.settings.mode === "range") {
     const ruleError = validateTagRules(state.pools.rangeTagRules);
-    if (ruleError) throw new DrawValidationError(ruleError);
+    if (ruleError) throw new Error(ruleError);
     const range = buildRangeEntries(Number(state.settings.min), Number(state.settings.max));
-    if (range.error) throw new DrawValidationError(range.error);
+    if (range.error) throw new Error(range.error);
     sourceEntries = asWeighted(enrichTags(range.entries, state));
   } else if (state.settings.mode === "custom") {
-    if (!state.pools.customEntries.length) throw new DrawValidationError("请至少添加一个自定义数字");
+    if (!state.pools.customEntries.length) throw runtimeError("errors.customPoolEmpty");
     sourceEntries = asWeighted(state.pools.customEntries);
   } else {
     const validation = validateWeightedEntries(state.pools.weightedEntries);
-    if (validation.errors.length) throw new DrawValidationError(validation.errors[0]);
+    if (validation.errors.length) throw new Error(validation.errors[0]);
     sourceEntries = validation.entries;
   }
   const selectedTags = state.settings.mode === "custom" ? state.settings.tagFilter.selectedTags : [];
   const candidates = filterWeightedEntries(sourceEntries, { selectedTags, combine: state.settings.tagFilter.combine, exclusions: excluded.tokens, used });
-  if (!candidates.length) throw new DrawValidationError(state.settings.noDup && used.size ? "抽后移除池已经耗尽，请重置池" : "当前没有可抽取数字");
+  if (!candidates.length) throw runtimeError(state.settings.noDup && used.size ? "errors.poolExhausted" : "errors.noCandidates");
   const count = clampCount(state.settings.count, state.settings.noDup ? candidates.length : 50);
-  if (state.settings.noDup && state.settings.count > candidates.length) throw new DrawValidationError(`可用数字不足，当前最多只能抽取 ${candidates.length} 个`);
+  if (state.settings.noDup && state.settings.count > candidates.length) throw runtimeError("errors.notEnoughAvailable", { count: candidates.length });
   return { mode: state.settings.mode, count, configSnapshot, poolsSnapshot, poolFingerprint: fingerprint, sourceCount: sourceEntries.length, candidateEntries: candidates, candidateSpec: candidateSpec(state, sourceEntries), presetId: state.drawState.activePresetId, operationKind: "draw" };
 }
 
 export function prepareShuffle(state: AppState): DrawPlan {
-  if (state.settings.mode === "expression") throw new DrawValidationError("骰子表达式不能列出全部顺序，请改用范围、自定义或加权池");
+  if (state.settings.mode === "expression") throw runtimeError("errors.expressionShuffleUnsupported");
   const plan = prepareDraw(state);
-  if (plan.candidateEntries.length > SHUFFLE_LIMIT) throw new DrawValidationError(`候选超过 ${SHUFFLE_LIMIT} 个，请缩小范围后再列出全部顺序`);
+  if (plan.candidateEntries.length > SHUFFLE_LIMIT) throw runtimeError("errors.shuffleLimit", { count: SHUFFLE_LIMIT });
   return { ...plan, count: plan.candidateEntries.length, operationKind: "shuffle" };
 }
 
@@ -80,7 +77,7 @@ export function executeDraw(plan: DrawPlan, source: RandomSource, session?: Draw
   const results: DrawResult[] = [];
   const isShuffle = plan.operationKind === "shuffle";
   if (plan.mode === "expression") {
-    if (!plan.expressionAst) throw new Error("骰子表达式尚未解析");
+    if (!plan.expressionAst) throw runtimeError("errors.expressionUnparsed");
     for (let index = 0; index < plan.count; index += 1) {
       const evaluated = evaluateDiceExpression(plan.expressionAst, source);
       const tags = tagsForValue(evaluated.total, plan.poolsSnapshot.expressionTagRules);
@@ -94,7 +91,7 @@ export function executeDraw(plan: DrawPlan, source: RandomSource, session?: Draw
         : drawUnweighted(plan.candidateEntries, plan.count, !plan.configSnapshot.noDup, source);
     selected.forEach((entry) => results.push({ value: entry.value, total: entry.value, faces: [], tags: entry.tags }));
   }
-  if (!results.length) throw new DrawValidationError("当前没有可抽取数字");
+  if (!results.length) throw runtimeError("errors.noCandidates");
   const id = createId("draw");
   return {
     id, createdAt: new Date().toISOString(), mode: plan.mode, configSnapshot: plan.configSnapshot, poolsSnapshot: plan.poolsSnapshot,

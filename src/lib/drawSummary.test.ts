@@ -1,6 +1,16 @@
 import { describe, expect, it } from "vitest";
 import { createDefaultState } from "../app/state";
+import { resources } from "../i18n/resources";
 import { formatDrawSummary } from "./drawSummary";
+
+function translator(locale: "zh-CN" | "en-US") {
+  return ((key: string, options: Record<string, unknown> = {}) => {
+    const value = key.split(".").reduce<unknown>((current, part) => (
+      current && typeof current === "object" ? (current as Record<string, unknown>)[part] : undefined
+    ), resources[locale].translation);
+    return String(value ?? key).replace(/{{(\w+)}}/g, (_match, name: string) => String(options[name] ?? ""));
+  }) as never;
+}
 
 const status = (overrides: Partial<Parameters<typeof formatDrawSummary>[2]> = {}) => ({
   sourceCount: 100,
@@ -44,5 +54,24 @@ describe("formatDrawSummary", () => {
     expect(result.invalid).toBe(true);
     expect(result.error).toBe("范围必须是整数");
     expect(result.accessible).toContain("配置无效");
+  });
+
+  it("formats complete English summaries without Chinese fallback text", () => {
+    const state = createDefaultState("en-US");
+    const en = translator("en-US");
+    const range = formatDrawSummary(state.settings, state.pools, status(), en);
+    expect(range.visible).toBe("Range 1–100 · 97 available · 5 this time · exclude 3");
+    expect(range.accessible).toBe(`Draw configuration: ${range.visible}`);
+
+    state.settings.mode = "expression";
+    state.settings.expression = { ...state.settings.expression, source: "", evaluation: "single" };
+    expect(formatDrawSummary(state.settings, state.pools, status(), en)).toMatchObject({
+      visible: "Dice not entered · Single roll",
+      accessible: "Draw configuration: Dice not entered · Single roll",
+    });
+
+    state.settings.expression = { ...state.settings.expression, source: "2d6", evaluation: "batch" };
+    state.settings.count = 4;
+    expect(formatDrawSummary(state.settings, state.pools, status(), en).visible).toBe("Dice 2d6 · 4 batch rolls");
   });
 });

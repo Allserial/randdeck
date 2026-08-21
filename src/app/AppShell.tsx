@@ -212,7 +212,7 @@ export default function AppShell() {
         <section className="view-host">
           {warnings.length > 0 && (
             <div className="migration-note" role="status">
-              {warnings.join("；")}
+              {warnings.map((warning) => translateRuntimeMessage(warning, t)).join(ui.locale === "en-US" ? "; " : "；")}
             </div>
           )}
           <ErrorBoundary name={t("app.workspaceUnavailable")}>

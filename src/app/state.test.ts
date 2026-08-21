@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { buildBackup, createDefaultState, migrateToV5, parseBackup } from "./state";
+import { parseRuntimeMessage } from "../domain/runtimeMessage";
 import { detectLocaleFromLanguages, normalizePersistedLocale } from "../i18n/locale";
 
 describe("AppState v5 migration", () => {
@@ -159,6 +160,8 @@ describe("AppState v5 migration", () => {
   it("validates versioned backups", () => {
     const backup = buildBackup(createDefaultState());
     expect(parseBackup(backup).version).toBe(5);
-    expect(() => parseBackup({ version: 99 })).toThrow(/不兼容/);
+    let error: unknown;
+    try { parseBackup({ version: 99 }); } catch (caught) { error = caught; }
+    expect(parseRuntimeMessage((error as Error).message)?.key).toBe("errors.incompatibleBackup");
   });
 });

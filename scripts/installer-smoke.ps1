@@ -1,66 +1,158 @@
 param(
   [string]$Version = "0.6.0",
-  [string]$InstallerPath = ""
+  [string]$InstallerPath = "",
+  [string]$PreviousInstallerPath = ""
 )
 
 $ErrorActionPreference = "Stop"
 $root = Split-Path -Parent $PSScriptRoot
-if (!$InstallerPath) { $InstallerPath = Join-Path $root "releases\$Version\installer\RandDeck-v$Version-offline-setup.exe" }
+if (!$InstallerPath) {
+  $InstallerPath = Join-Path $root "releases\$Version\installer\RandDeck-v$Version-offline-setup.exe"
+}
+if (!$PreviousInstallerPath) {
+  $PreviousInstallerPath = Join-Path $root "releases\0.5.0\installer\掷数台-离线安装版-setup.exe"
+}
+
 $installer = (Resolve-Path -LiteralPath $InstallerPath).Path
-$previousInstaller = Join-Path $root "releases\0.5.0\installer\掷数台-离线安装版-setup.exe"
-$appDataDir = Join-Path $env:APPDATA "com.zhishutai.desktop"
-$statePath = Join-Path $appDataDir "state-v5.json"
-$legacyStatePath = Join-Path $appDataDir "state-v4.json"
-$tempRoot = Join-Path $env:TEMP ("zhishutai-v$($Version.Replace('.', ''))-installer-smoke-" + [guid]::NewGuid().ToString("N"))
+$previousInstaller = (Resolve-Path -LiteralPath $PreviousInstallerPath).Path
+$appDataDir = [System.IO.Path]::GetFullPath((Join-Path $env:APPDATA "com.zhishutai.desktop"))
+$tempRoot = [System.IO.Path]::GetFullPath((Join-Path $env:TEMP ("randdeck-v$($Version.Replace('.', ''))-upgrade-smoke-" + [guid]::NewGuid().ToString("N"))))
 $installDir = Join-Path $tempRoot "app"
 $backupDir = Join-Path $tempRoot "backup"
+$appDataBackup = Join-Path $backupDir "app-data"
+$sentinelPath = Join-Path $appDataDir "upgrade-smoke-sentinel.json"
 $reportPath = Join-Path $root "reports\installer-smoke.json"
-New-Item -ItemType Directory -Path $installDir, $backupDir -Force | Out-Null
+$relatedNamePattern = "^(RandDeck|掷数台|zhishutai)"
+$tempBase = [System.IO.Path]::GetFullPath($env:TEMP).TrimEnd("\")
+$appDataBase = [System.IO.Path]::GetFullPath($env:APPDATA).TrimEnd("\")
+
+if (!$tempRoot.StartsWith("$tempBase\", [System.StringComparison]::OrdinalIgnoreCase)) {
+  throw "临时目录越界：$tempRoot"
+}
+if (!$appDataDir.StartsWith("$appDataBase\", [System.StringComparison]::OrdinalIgnoreCase)) {
+  throw "应用数据目录越界：$appDataDir"
+}
+
+New-Item -ItemType Directory -Path $installDir, $backupDir, (Split-Path -Parent $reportPath) -Force | Out-Null
 
 function Get-UninstallEntries {
-  $paths = @("HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\*", "HKLM:\Software\Microsoft\Windows\CurrentVersion\Uninstall\*")
-  @(Get-ItemProperty -Path $paths -ErrorAction SilentlyContinue | Where-Object DisplayName -Like "*RandDeck*" | ForEach-Object { "$($_.PSPath)|$($_.DisplayVersion)|$($_.InstallLocation)" })
+  $paths = @(
+    "HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\*",
+    "HKLM:\Software\Microsoft\Windows\CurrentVersion\Uninstall\*",
+    "HKLM:\Software\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\*"
+  )
+  @(
+    Get-ItemProperty -Path $paths -ErrorAction SilentlyContinue |
+      Where-Object { $_.DisplayName -match $relatedNamePattern } |
+      ForEach-Object {
+        [pscustomobject]@{
+          key = $_.PSPath
+          name = $_.DisplayName
+          version = $_.DisplayVersion
+          installLocation = $_.InstallLocation
+          uninstallString = $_.UninstallString
+        }
+      }
+  )
 }
 
 function Get-ProductShortcuts {
   $roots = @([Environment]::GetFolderPath("Desktop"), [Environment]::GetFolderPath("Programs"))
-  @(foreach ($shortcutRoot in $roots) { if (Test-Path -LiteralPath $shortcutRoot) { Get-ChildItem -LiteralPath $shortcutRoot -Filter "*RandDeck*.lnk" -File -Recurse -ErrorAction SilentlyContinue | Select-Object -ExpandProperty FullName } })
+  @(
+    foreach ($shortcutRoot in $roots) {
+      if (Test-Path -LiteralPath $shortcutRoot) {
+        Get-ChildItem -LiteralPath $shortcutRoot -Filter "*.lnk" -File -Recurse -ErrorAction SilentlyContinue |
+          Where-Object { $_.BaseName -match $relatedNamePattern } |
+          Select-Object -ExpandProperty FullName
+      }
+    }
+  )
 }
 
-$sandbox = Test-Path -LiteralPath (Join-Path $env:WINDIR "System32\WindowsSandbox.exe")
-$stateExisted = Test-Path -LiteralPath $statePath
-$stateHashBefore = if ($stateExisted) { (Get-FileHash -LiteralPath $statePath -Algorithm SHA256).Hash.ToLowerInvariant() } else { $null }
-if ($stateExisted) { Copy-Item -LiteralPath $statePath -Destination (Join-Path $backupDir "state-v5.json") }
-elseif (Test-Path -LiteralPath $legacyStatePath) { Copy-Item -LiteralPath $legacyStatePath -Destination (Join-Path $backupDir "state-v4.json") }
-$uninstallBefore = Get-UninstallEntries
-$shortcutsBefore = Get-ProductShortcuts
-$process = $null
-$uninstaller = $null
+function Invoke-Installer([string]$Path, [string]$Destination) {
+  $process = Start-Process -FilePath $Path -ArgumentList @("/S", "/D=$Destination") -WindowStyle Hidden -Wait -PassThru
+  if ($process.ExitCode -ne 0) { throw "安装程序退出码为 $($process.ExitCode)：$([System.IO.Path]::GetFileName($Path))" }
+  return $process.ExitCode
+}
+
+function Invoke-AppSmoke([string]$Executable, [string]$WorkingDirectory) {
+  $process = Start-Process -FilePath $Executable -WorkingDirectory $WorkingDirectory -WindowStyle Hidden -PassThru
+  try {
+    $deadline = (Get-Date).AddSeconds(30)
+    do {
+      Start-Sleep -Milliseconds 250
+      $process.Refresh()
+    } while (!$process.HasExited -and $process.MainWindowHandle -eq 0 -and (Get-Date) -lt $deadline)
+    if ($process.HasExited -or $process.MainWindowHandle -eq 0 -or !$process.Responding) {
+      throw "应用未在 30 秒内打开可响应窗口：$([System.IO.Path]::GetFileName($Executable))"
+    }
+    return $process.MainWindowTitle
+  } finally {
+    if (!$process.HasExited) {
+      Stop-Process -Id $process.Id -Force -ErrorAction SilentlyContinue
+      $process.WaitForExit()
+    }
+  }
+}
+
+function Invoke-InstalledUninstaller([string]$Directory) {
+  $uninstaller = Get-ChildItem -LiteralPath $Directory -Filter "uninstall*.exe" -File -ErrorAction SilentlyContinue | Select-Object -First 1
+  if (!$uninstaller) { throw "没有找到卸载程序" }
+  $process = Start-Process -FilePath $uninstaller.FullName -ArgumentList "/S" -WindowStyle Hidden -Wait -PassThru
+  if ($process.ExitCode -ne 0) { throw "卸载程序退出码为 $($process.ExitCode)" }
+  return $process.ExitCode
+}
+
+$baselineEntries = Get-UninstallEntries
+$baselineShortcuts = Get-ProductShortcuts
+$runningProcesses = @(Get-Process -Name "randdeck", "zhishutai" -ErrorAction SilentlyContinue)
+$stateExisted = Test-Path -LiteralPath $appDataDir
+$stateHashBefore = $null
+if ($stateExisted) {
+  New-Item -ItemType Directory -Path $appDataBackup -Force | Out-Null
+  foreach ($item in Get-ChildItem -LiteralPath $appDataDir -Force) {
+    Copy-Item -LiteralPath $item.FullName -Destination $appDataBackup -Recurse -Force
+  }
+  $statePath = Join-Path $appDataDir "state-v5.json"
+  if (Test-Path -LiteralPath $statePath) {
+    $stateHashBefore = (Get-FileHash -LiteralPath $statePath -Algorithm SHA256).Hash.ToLowerInvariant()
+  }
+}
+
 $report = [ordered]@{
-  schema = "zhishutai.installer-smoke.v1"
+  schema = "zhishutai.installer-upgrade-smoke.v2"
   version = $Version
   generatedAt = (Get-Date).ToUniversalTime().ToString("o")
-  mode = if ($sandbox) { "windows-sandbox-available-but-current-user-fallback" } else { "current-user-temporary-directory" }
-  windowsSandboxAvailable = $sandbox
+  mode = "current-user-temporary-directory"
+  windowsSandboxAvailable = Test-Path -LiteralPath (Join-Path $env:WINDIR "System32\WindowsSandbox.exe")
   installerSha256 = (Get-FileHash -LiteralPath $installer -Algorithm SHA256).Hash.ToLowerInvariant()
-  statePath = "%APPDATA%\com.zhishutai.desktop\state-v5.json"
   previousInstaller = [ordered]@{
     path = "releases\0.5.0\installer\掷数台-离线安装版-setup.exe"
-    exists = Test-Path -LiteralPath $previousInstaller
-    bytes = if (Test-Path -LiteralPath $previousInstaller) { (Get-Item -LiteralPath $previousInstaller).Length } else { $null }
-    sha256 = if (Test-Path -LiteralPath $previousInstaller) { (Get-FileHash -LiteralPath $previousInstaller -Algorithm SHA256).Hash.ToLowerInvariant() } else { $null }
-    deltaBytes = if (Test-Path -LiteralPath $previousInstaller) { (Get-Item -LiteralPath $installer).Length - (Get-Item -LiteralPath $previousInstaller).Length } else { $null }
+    bytes = (Get-Item -LiteralPath $previousInstaller).Length
+    sha256 = (Get-FileHash -LiteralPath $previousInstaller -Algorithm SHA256).Hash.ToLowerInvariant()
+    deltaBytes = (Get-Item -LiteralPath $installer).Length - (Get-Item -LiteralPath $previousInstaller).Length
   }
+  statePath = "%APPDATA%\com.zhishutai.desktop\state-v5.json"
+  stateHashBefore = $stateHashBefore
+  previousInstallExitCode = $null
+  previousExecutable = $null
+  previousLaunched = $false
+  previousWindowTitle = $null
   installExitCode = $null
   installedExecutable = $null
   launched = $false
   windowTitle = $null
+  oldExecutableRemoved = $false
+  singleUninstallEntry = $false
+  uninstallDisplayName = $null
+  uninstallDisplayVersion = $null
+  oldShortcutsRemoved = $false
+  newShortcutCount = 0
+  statePreservedAcrossUpgrade = $false
   uninstallExitCode = $null
   uninstallEntryAdded = $false
   uninstallEntryRemoved = $false
-  newShortcutCount = 0
   shortcutsRemoved = $false
-  stateHashBefore = $stateHashBefore
   stateHashAfterRestore = $null
   stateRestored = $false
   temporaryDirectoryRemoved = $false
@@ -69,61 +161,101 @@ $report = [ordered]@{
 }
 
 try {
-  $install = Start-Process -FilePath $installer -ArgumentList @("/S", "/D=$installDir") -WindowStyle Hidden -Wait -PassThru
-  $report.installExitCode = $install.ExitCode
-  if ($install.ExitCode -ne 0) { throw "安装程序退出码为 $($install.ExitCode)" }
+  if ($runningProcesses.Count) { throw "检测到 RandDeck/掷数台正在运行，请关闭后重试安装升级烟测" }
+  if ($baselineEntries.Count) { throw "检测到现有 RandDeck/掷数台安装项；为避免影响真实安装，已停止烟测" }
 
-  $uninstallAfterInstall = Get-UninstallEntries
-  $shortcutsAfterInstall = Get-ProductShortcuts
-  $report.uninstallEntryAdded = @($uninstallAfterInstall | Where-Object { $uninstallBefore -notcontains $_ }).Count -gt 0
-  $report.newShortcutCount = @($shortcutsAfterInstall | Where-Object { $shortcutsBefore -notcontains $_ }).Count
+  if (Test-Path -LiteralPath $appDataDir) {
+    Remove-Item -LiteralPath $appDataDir -Recurse -Force
+  }
+
+  $report.previousInstallExitCode = Invoke-Installer $previousInstaller $installDir
+  $previousExe = Get-Item -LiteralPath (Join-Path $installDir "zhishutai.exe") -ErrorAction SilentlyContinue
+  if (!$previousExe) { throw "v0.5.0 安装后未找到 zhishutai.exe" }
+  $report.previousExecutable = $previousExe.Name
+  $report.previousWindowTitle = Invoke-AppSmoke $previousExe.FullName $installDir
+  $report.previousLaunched = [bool]$report.previousWindowTitle
+
+  New-Item -ItemType Directory -Path $appDataDir -Force | Out-Null
+  $sentinel = [ordered]@{ id = [guid]::NewGuid().ToString("N"); createdAt = (Get-Date).ToUniversalTime().ToString("o") }
+  $sentinel | ConvertTo-Json | Set-Content -LiteralPath $sentinelPath -Encoding UTF8
+  $sentinelHash = (Get-FileHash -LiteralPath $sentinelPath -Algorithm SHA256).Hash.ToLowerInvariant()
+
+  $report.installExitCode = Invoke-Installer $installer $installDir
+  $entriesAfterUpgrade = Get-UninstallEntries
+  $shortcutsAfterUpgrade = Get-ProductShortcuts
+  $newShortcuts = @($shortcutsAfterUpgrade | Where-Object { $baselineShortcuts -notcontains $_ })
+  $oldNewShortcuts = @($newShortcuts | Where-Object { [System.IO.Path]::GetFileNameWithoutExtension($_) -match "^(掷数台|zhishutai)$" })
 
   $installedExe = Get-Item -LiteralPath (Join-Path $installDir "RandDeck.exe") -ErrorAction SilentlyContinue
-  if (!$installedExe) { throw "临时安装目录中没有找到应用 EXE" }
+  if (!$installedExe) { throw "v0.6.0 升级后未找到 RandDeck.exe" }
   $report.installedExecutable = $installedExe.Name
-  $process = Start-Process -FilePath $installedExe.FullName -WorkingDirectory $installDir -WindowStyle Hidden -PassThru
-  $deadline = (Get-Date).AddSeconds(20)
-  do { Start-Sleep -Milliseconds 250; $process.Refresh() } while (!$process.HasExited -and $process.MainWindowHandle -eq 0 -and (Get-Date) -lt $deadline)
-  $report.launched = !$process.HasExited -and $process.MainWindowHandle -ne 0 -and $process.Responding
-  $report.windowTitle = $process.MainWindowTitle
-  if (!$report.launched) { throw "安装后的应用未正常启动" }
-  Stop-Process -Id $process.Id -Force
-  $process.WaitForExit()
-  $process = $null
+  $report.oldExecutableRemoved = !(Test-Path -LiteralPath (Join-Path $installDir "zhishutai.exe"))
+  $report.singleUninstallEntry = $entriesAfterUpgrade.Count -eq 1
+  if ($entriesAfterUpgrade.Count -eq 1) {
+    $report.uninstallDisplayName = $entriesAfterUpgrade[0].name
+    $report.uninstallDisplayVersion = $entriesAfterUpgrade[0].version
+  }
+  $report.uninstallEntryAdded = $entriesAfterUpgrade.Count -eq 1
+  $report.newShortcutCount = $newShortcuts.Count
+  $report.oldShortcutsRemoved = $oldNewShortcuts.Count -eq 0
+  $report.statePreservedAcrossUpgrade = (Test-Path -LiteralPath $sentinelPath) -and ((Get-FileHash -LiteralPath $sentinelPath -Algorithm SHA256).Hash.ToLowerInvariant() -eq $sentinelHash)
 
-  $uninstaller = Get-ChildItem -LiteralPath $installDir -Filter "uninstall*.exe" -File | Select-Object -First 1
-  if (!$uninstaller) { throw "没有找到卸载程序" }
-  $uninstall = Start-Process -FilePath $uninstaller.FullName -ArgumentList "/S" -WindowStyle Hidden -Wait -PassThru
-  $report.uninstallExitCode = $uninstall.ExitCode
-  if ($uninstall.ExitCode -ne 0) { throw "卸载程序退出码为 $($uninstall.ExitCode)" }
+  $report.windowTitle = Invoke-AppSmoke $installedExe.FullName $installDir
+  $report.launched = [bool]$report.windowTitle
+
+  $report.uninstallExitCode = Invoke-InstalledUninstaller $installDir
   Start-Sleep -Seconds 1
-  $uninstallAfterRemove = Get-UninstallEntries
+  $entriesAfterRemove = Get-UninstallEntries
   $shortcutsAfterRemove = Get-ProductShortcuts
-  $report.uninstallEntryRemoved = @($uninstallAfterInstall | Where-Object { $uninstallBefore -notcontains $_ -and $uninstallAfterRemove -notcontains $_ }).Count -eq @($uninstallAfterInstall | Where-Object { $uninstallBefore -notcontains $_ }).Count
-  $report.shortcutsRemoved = @($shortcutsAfterInstall | Where-Object { $shortcutsBefore -notcontains $_ -and $shortcutsAfterRemove -contains $_ }).Count -eq 0
-  $report.passed = $report.installedExecutable -eq "RandDeck.exe" -and $report.launched -and $report.uninstallEntryAdded -and $report.newShortcutCount -gt 0 -and $report.uninstallEntryRemoved -and $report.shortcutsRemoved
+  $report.uninstallEntryRemoved = $entriesAfterRemove.Count -eq 0
+  $report.shortcutsRemoved = @($newShortcuts | Where-Object { $shortcutsAfterRemove -contains $_ }).Count -eq 0
+
+  $report.passed =
+    $report.previousLaunched -and
+    $report.installedExecutable -eq "RandDeck.exe" -and
+    $report.launched -and
+    $report.oldExecutableRemoved -and
+    $report.singleUninstallEntry -and
+    $report.uninstallDisplayName -eq "RandDeck" -and
+    $report.uninstallDisplayVersion -eq $Version -and
+    $report.oldShortcutsRemoved -and
+    $report.newShortcutCount -gt 0 -and
+    $report.statePreservedAcrossUpgrade -and
+    $report.uninstallEntryRemoved -and
+    $report.shortcutsRemoved
 } catch {
   $report.error = $_.Exception.Message
 } finally {
-  if ($process -and !$process.HasExited) { Stop-Process -Id $process.Id -Force -ErrorAction SilentlyContinue }
-  if ((Test-Path -LiteralPath $installDir) -and !$report.uninstallExitCode) {
+  if (Test-Path -LiteralPath $installDir) {
     $fallbackUninstaller = Get-ChildItem -LiteralPath $installDir -Filter "uninstall*.exe" -File -ErrorAction SilentlyContinue | Select-Object -First 1
-    if ($fallbackUninstaller) { Start-Process -FilePath $fallbackUninstaller.FullName -ArgumentList "/S" -WindowStyle Hidden -Wait | Out-Null }
+    if ($fallbackUninstaller) {
+      Start-Process -FilePath $fallbackUninstaller.FullName -ArgumentList "/S" -WindowStyle Hidden -Wait -ErrorAction SilentlyContinue | Out-Null
+    }
+  }
+
+  if (Test-Path -LiteralPath $appDataDir) {
+    Remove-Item -LiteralPath $appDataDir -Recurse -Force
   }
   if ($stateExisted) {
     New-Item -ItemType Directory -Path $appDataDir -Force | Out-Null
-    Copy-Item -LiteralPath (Join-Path $backupDir "state-v5.json") -Destination $statePath -Force
-    $report.stateHashAfterRestore = (Get-FileHash -LiteralPath $statePath -Algorithm SHA256).Hash.ToLowerInvariant()
-    $report.stateRestored = $report.stateHashAfterRestore -eq $stateHashBefore
+    foreach ($item in Get-ChildItem -LiteralPath $appDataBackup -Force) {
+      Copy-Item -LiteralPath $item.FullName -Destination $appDataDir -Recurse -Force
+    }
+    $restoredStatePath = Join-Path $appDataDir "state-v5.json"
+    if ($stateHashBefore -and (Test-Path -LiteralPath $restoredStatePath)) {
+      $report.stateHashAfterRestore = (Get-FileHash -LiteralPath $restoredStatePath -Algorithm SHA256).Hash.ToLowerInvariant()
+      $report.stateRestored = $report.stateHashAfterRestore -eq $stateHashBefore
+    } else {
+      $report.stateRestored = Test-Path -LiteralPath $appDataDir
+    }
   } else {
-    if (Test-Path -LiteralPath $statePath) { Remove-Item -LiteralPath $statePath -Force }
-    $report.stateRestored = !(Test-Path -LiteralPath $statePath)
+    $report.stateRestored = !(Test-Path -LiteralPath $appDataDir)
   }
-  $resolvedTemp = (Resolve-Path -LiteralPath $tempRoot).Path
-  $resolvedTempBase = (Resolve-Path -LiteralPath $env:TEMP).Path
-  if (!$resolvedTemp.StartsWith("$resolvedTempBase\", [System.StringComparison]::OrdinalIgnoreCase)) { throw "临时目录越界：$resolvedTemp" }
-  Remove-Item -LiteralPath $resolvedTemp -Recurse -Force
-  $report.temporaryDirectoryRemoved = !(Test-Path -LiteralPath $resolvedTemp)
+
+  if (Test-Path -LiteralPath $tempRoot) {
+    Remove-Item -LiteralPath $tempRoot -Recurse -Force
+  }
+  $report.temporaryDirectoryRemoved = !(Test-Path -LiteralPath $tempRoot)
   $report.passed = $report.passed -and $report.stateRestored -and $report.temporaryDirectoryRemoved
   $report | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $reportPath -Encoding UTF8
 }

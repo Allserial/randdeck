@@ -37,11 +37,18 @@ export function formatDrawSummary(
   }
 
   if (settings.mode === "expression") {
-    const evaluation = settings.expression.evaluation === "single" ? (translate ? translate("roll.single") : "单次") : (translate ? translate("roll.batch") : `批量 ${settings.count} 次`);
+    const expression = settings.expression.source || (translate ? translate("roll.summary.notEntered") : "未填写");
     const visible = translate
-      ? translate("roll.summary.expression", { expression: settings.expression.source || "未填写", evaluation, count: settings.count })
-      : `骰子 ${settings.expression.source || "未填写"} · ${evaluation}`;
-    return { visible, accessible: translate ? visible : `抽取配置：${visible}`, invalid: false, error: "" };
+      ? settings.expression.evaluation === "single"
+        ? translate("roll.summary.expressionSingle", { expression })
+        : translate("roll.summary.expressionBatch", { expression, count: settings.count })
+      : `骰子 ${expression} · ${settings.expression.evaluation === "single" ? "单次" : `批量 ${settings.count} 次`}`;
+    return {
+      visible,
+      accessible: translate ? translate("roll.summary.accessible", { summary: visible }) : `抽取配置：${visible}`,
+      invalid: false,
+      error: "",
+    };
   }
 
   const noDup = settings.noDup ? (translate ? ` · ${translate("roll.summary.removed")}` : " · 抽后移除") : "";
@@ -54,12 +61,22 @@ export function formatDrawSummary(
     const visible = translate
       ? translate("roll.summary.range", { min: settings.min, max: settings.max, available: poolStatus.candidateCount, count: settings.count }) + exclusion + noDup
       : `范围 ${settings.min}–${settings.max} · 可抽 ${poolStatus.candidateCount} · ${countLabel(settings.count)}${exclusion}${noDup}`;
-    return { visible, accessible: `抽取配置：${visible}`, invalid: false, error: "" };
+    return {
+      visible,
+      accessible: translate ? translate("roll.summary.accessible", { summary: visible }) : `抽取配置：${visible}`,
+      invalid: false,
+      error: "",
+    };
   }
 
   const total = isWeighted ? pools.weightedEntries.length : pools.customEntries.length;
   const visible = translate
     ? translate("roll.summary.custom", { total, available: poolStatus.candidateCount, count: settings.count }) + tag + exclusion + noDup
     : `${isWeighted ? "加权池" : "自定义池"} ${total} 项 · 可抽 ${poolStatus.candidateCount} · ${countLabel(settings.count)}${tag}${exclusion}${noDup}`;
-  return { visible, accessible: `抽取配置：${visible}`, invalid: false, error: "" };
+  return {
+    visible,
+    accessible: translate ? translate("roll.summary.accessible", { summary: visible }) : `抽取配置：${visible}`,
+    invalid: false,
+    error: "",
+  };
 }

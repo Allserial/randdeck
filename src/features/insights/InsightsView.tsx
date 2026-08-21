@@ -13,7 +13,7 @@ import { Button, IconButton } from "../../components/ui/Button";
 import { Dialog } from "../../components/ui/Dialog";
 import { Segmented } from "../../components/ui/Segmented";
 import { historySearchText, modeLabel } from "../../lib/labels";
-import { formatLocaleDate, formatLocaleNumber } from "../../i18n/messages";
+import { formatLocaleDate, formatLocaleNumber, translateRuntimeMessage } from "../../i18n/messages";
 
 const ChartsPanel = lazy(() => import("./ChartsPanel"));
 type Tab = "overview" | "history" | "probability";
@@ -355,7 +355,7 @@ export default function InsightsView() {
             <>
               <div className="report-summary">
                 <span className={report.method}>{report.method === "exact" ? t("common.status.exact") : t("common.status.simulated")}</span>
-                <strong>{report.reason}</strong>
+                <strong>{translateRuntimeMessage(report.reason, t)}</strong>
                 {report.seed !== undefined && <code>seed {report.seed}</code>}
                 {report.uncertainty !== undefined && (
                   <small>{t("insights.maxError", { value: (report.uncertainty * 100).toFixed(2) })}</small>

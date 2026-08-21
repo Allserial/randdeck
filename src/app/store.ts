@@ -4,6 +4,7 @@ import { applyStatsDelta, resetStats } from "../domain/stats";
 import { createId } from "../domain/random";
 import { createDefaultState, HISTORY_LIMIT, migrateToV5 } from "./state";
 import { createPersistenceAdapter, loadPersistedState, savePersistedState, type PersistenceAdapter } from "../platform/persistence";
+import { createRuntimeMessage, messageFromUnknown } from "../domain/runtimeMessage";
 
 interface RuntimeState {
   hydrated: boolean;
@@ -92,7 +93,7 @@ function queuePersistence(immediate = false): void {
     const state = useAppStore.getState();
     if (!state.hydrated) return;
     savePersistedState(persistentSnapshot(state), adapter).catch((error) =>
-      useAppStore.setState({ error: `本地保存失败：${(error as Error).message}` })
+      useAppStore.setState({ error: createRuntimeMessage("errors.localSave", { message: messageFromUnknown(error) }) })
     );
   };
   if (immediate) void run();
@@ -369,7 +370,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
   recallHistory(id) {
     const entry = get().history.find((item) => item.id === id);
     if (!entry) {
-      get().setError("找不到要召回的批次");
+      get().setError(createRuntimeMessage("errors.recallMissing"));
       return;
     }
     set((state) => ({
@@ -378,7 +379,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
       ui: { ...state.ui, activeView: "roll" },
       drawState: { ...state.drawState, lastTransactionId: entry.transactionId || state.drawState.lastTransactionId },
       resultInteraction: structuredClone(defaultResultInteraction),
-      toast: "已召回该批结果",
+      toast: createRuntimeMessage("roll.recall"),
       revision: state.revision + 1,
     }));
   },

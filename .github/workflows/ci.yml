@@ -25,6 +25,8 @@ jobs:
         run: npm ci
       - name: Verify localization resources
         run: npm run i18n:verify
+      - name: Verify repository privacy
+        run: npm run privacy:verify
       - name: Validate icons
         run: npm run icons:verify
       - name: Lint

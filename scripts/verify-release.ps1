@@ -12,6 +12,7 @@ New-Item -ItemType Directory -Path $logDir -Force | Out-Null
 $gates = @(
   @{ id = "npm-audit"; command = "npm"; args = @("audit", "--audit-level=low"); cwd = $root },
   @{ id = "i18n-verify"; command = "npm"; args = @("run", "i18n:verify"); cwd = $root },
+  @{ id = "privacy-verify"; command = "npm"; args = @("run", "privacy:verify"); cwd = $root },
   @{ id = "icons-verify"; command = "npm"; args = @("run", "icons:verify"); cwd = $root },
   @{ id = "lint"; command = "npm"; args = @("run", "lint"); cwd = $root },
   @{ id = "typecheck"; command = "npm"; args = @("run", "typecheck"); cwd = $root },
@@ -47,14 +48,22 @@ foreach ($gate in $gates) {
 }
 
 $runtimePath = Join-Path $reportDir "tauri-runtime\runtime-smoke.json"
+$sourceCommit = (& git -C $root rev-parse HEAD 2>$null).Trim()
 $runtime = if (Test-Path -LiteralPath $runtimePath) {
+  $runtimeReport = Get-Content -Raw -LiteralPath $runtimePath | ConvertFrom-Json
   $runtimeHash = (Get-FileHash -LiteralPath $runtimePath -Algorithm SHA256).Hash.ToLowerInvariant()
-  [pscustomobject]@{ status = "passed"; report = "reports/tauri-runtime/runtime-smoke.json"; sha256 = $runtimeHash }
+  $runtimePassed = $runtimeReport.sourceCommit -eq $sourceCommit -and $runtimeReport.cleanSource -eq $true -and @($runtimeReport.consoleErrors).Count -eq 0
+  [pscustomobject]@{
+    status = if ($runtimePassed) { "passed" } else { "stale-or-failed" }
+    report = "reports/tauri-runtime/runtime-smoke.json"
+    sha256 = $runtimeHash
+    sourceCommit = $runtimeReport.sourceCommit
+    debugExecutableSha256 = $runtimeReport.debugExecutableSha256
+  }
 } else {
   [pscustomobject]@{ status = "missing"; report = $null; sha256 = $null }
 }
 
-$sourceCommit = (& git -C $root rev-parse HEAD 2>$null).Trim()
 $report = [pscustomobject]@{
   schema = "zhishutai.verification.v1"
   version = $Version

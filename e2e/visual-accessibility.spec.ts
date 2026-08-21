@@ -26,12 +26,14 @@ test("首屏无严重无障碍问题、无外部网络请求", async ({ page }) 
   await assertNoViewportOverflow(page);
 });
 
-for (const viewport of [
+const viewports = [
   { name: "desktop-1180x820", width: 1180, height: 820 },
   { name: "compact-1024x768", width: 1024, height: 768 },
   { name: "minimum-680x620", width: 680, height: 620 },
   { name: "mobile-390x844", width: 390, height: 844 },
-]) {
+];
+
+for (const viewport of viewports) {
   test(`响应式视觉证据 ${viewport.name}`, async ({ page }) => {
     await page.setViewportSize({ width: viewport.width, height: viewport.height });
     await page.goto("/");
@@ -40,6 +42,27 @@ for (const viewport of [
     await page.screenshot({ path: `reports/playwright/${viewport.name}.png`, fullPage: false, animations: "disabled" });
   });
 }
+
+test("英文界面四种关键视口无溢出且无严重无障碍问题", async ({ page }) => {
+  await page.goto("/");
+  await page.getByLabel("主导航").getByRole("button", { name: "设置" }).click();
+  await page.getByRole("group", { name: "语言" }).getByRole("button", { name: "English" }).click();
+
+  for (const viewport of viewports) {
+    await page.setViewportSize({ width: viewport.width, height: viewport.height });
+    await page.reload();
+    await expect(page.getByRole("heading", { name: "Waiting for a draw" })).toBeVisible();
+    await assertNoViewportOverflow(page);
+    const scan = await new AxeBuilder({ page }).analyze();
+    const blocking = scan.violations.filter((item) => ["serious", "critical"].includes(item.impact || ""));
+    expect(blocking, `${viewport.name}: ${JSON.stringify(blocking, null, 2)}`).toEqual([]);
+    await page.screenshot({
+      path: `reports/playwright/en-${viewport.name}.png`,
+      fullPage: false,
+      animations: "disabled",
+    });
+  }
+});
 
 test("高对比主题与减少动态效果保持可操作", async ({ page }) => {
   await page.emulateMedia({ reducedMotion: "reduce", forcedColors: "active" });

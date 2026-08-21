@@ -9,6 +9,7 @@ import { saveLocalFile } from "../../platform/files";
 import { useAppStore } from "../../app/store";
 import { Button } from "../../components/ui/Button";
 import { Dialog } from "../../components/ui/Dialog";
+import { translateRuntimeMessage } from "../../i18n/messages";
 
 export default function PoolEditor({ mode = "custom" }: { mode?: "custom" }) {
   const { t } = useTranslation();
@@ -142,7 +143,7 @@ export default function PoolEditor({ mode = "custom" }: { mode?: "custom" }) {
       );
       setToast(`${t("common.actions.import")} (${entries.length} ${t("common.units.rows")})`);
     } catch (error) {
-      setError(t("errors.importFailed", { message: (error as Error).message }));
+      setError(t("errors.importFailed", { message: translateRuntimeMessage((error as Error).message, t) }));
     }
   };
 
@@ -150,7 +151,11 @@ export default function PoolEditor({ mode = "custom" }: { mode?: "custom" }) {
     const csv = `\uFEFF${Papa.unparse(
       draft.map((entry) => ({ 数字: entry.value, 标签: entry.tags.join("|") }))
     )}`;
-    await saveLocalFile(`${locale === "en-US" ? "RandDeck" : "掷数台"}-custom-pool.csv`, csv, "text/csv");
+    await saveLocalFile(
+      locale === "en-US" ? "RandDeck-custom-pool.csv" : "掷数台-自定义池.csv",
+      csv,
+      "text/csv",
+    );
     setToast(t("common.actions.export"));
   };
 

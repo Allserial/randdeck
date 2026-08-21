@@ -135,6 +135,7 @@ export default function DrawInspector() {
   const translate = t as unknown as (key: string, options?: Record<string, unknown>) => string;
   const settings = useAppStore((state) => state.settings);
   const pools = useAppStore((state) => state.pools);
+  const locale = useAppStore((state) => state.ui.locale);
   const isDrawing = useAppStore((state) => state.isDrawing);
   const ceremony = useAppStore((state) => state.ceremony);
   const update = useAppStore((state) => state.updateSettings);
@@ -162,11 +163,11 @@ export default function DrawInspector() {
     if (settings.mode !== "expression") return "";
     try {
       const ast = parseDiceExpression(settings.expression.source);
-      return describeDiceExpression(ast);
+      return describeDiceExpression(ast, locale);
     } catch (err) {
       return err instanceof Error ? translateRuntimeMessage(err.message, t) : t("roll.invalidExpression");
     }
-  }, [settings.expression.source, settings.mode, t]);
+  }, [locale, settings.expression.source, settings.mode, t]);
 
   const updateCount = (next: number) => {
     const value = Math.max(1, Math.min(50, Math.trunc(next)));

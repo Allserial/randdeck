@@ -2,6 +2,7 @@ import { APP_VERSION } from "../app/version";
 import type { AppLocale } from "./types";
 import type { DrawSession, DrawTransaction, ReceiptPayload } from "./types";
 import { modeLabel } from "../lib/labels";
+import { runtimeError } from "./runtimeMessage";
 
 export function canonicalize(value: unknown): string {
   if (value === null || typeof value !== "object") return JSON.stringify(value);
@@ -48,7 +49,7 @@ export async function renderReceiptPng(receipt: ReceiptPayload, locale: AppLocal
   canvas.width = 1200;
   canvas.height = 675;
   const context = canvas.getContext("2d");
-  if (!context) throw new Error("当前环境不能生成 PNG 回执");
+  if (!context) throw runtimeError("errors.receiptPngUnavailable");
 
   // 墨蓝底色 + 琥珀铜饰条
   context.fillStyle = "#0b0d12";
@@ -95,7 +96,9 @@ export async function renderReceiptPng(receipt: ReceiptPayload, locale: AppLocal
       ? receipt.config.expression.source
       : receipt.mode === "range"
         ? `${receipt.config.min}..${receipt.config.max}`
-        : `${receipt.candidate.entries?.length ?? 0} 个条目`;
+        : locale === "en-US"
+          ? `${receipt.candidate.entries?.length ?? 0} entries`
+          : `${receipt.candidate.entries?.length ?? 0} 个条目`;
   context.fillText(
     locale === "en-US"
       ? `Source: ${source}    Count: ${receipt.config.count.toLocaleString(locale)}    Remove after draw: ${receipt.config.noDup ? "Yes" : "No"}`
@@ -121,7 +124,7 @@ export async function renderReceiptPng(receipt: ReceiptPayload, locale: AppLocal
   );
 
   return new Promise((resolve, reject) =>
-    canvas.toBlob((blob) => (blob ? resolve(blob) : reject(new Error("PNG 编码失败"))), "image/png")
+    canvas.toBlob((blob) => (blob ? resolve(blob) : reject(runtimeError("errors.pngEncodingFailed"))), "image/png")
   );
 }
 
@@ -130,7 +133,7 @@ export async function renderSessionSummaryPng(session: DrawSession, values: numb
   canvas.width = 1200;
   canvas.height = 675;
   const context = canvas.getContext("2d");
-  if (!context) throw new Error("当前环境不能生成会话图片");
+  if (!context) throw runtimeError("errors.sessionPngUnavailable");
 
   context.fillStyle = "#0b0d12";
   context.fillRect(0, 0, 1200, 675);
@@ -175,6 +178,6 @@ export async function renderSessionSummaryPng(session: DrawSession, values: numb
   );
 
   return new Promise((resolve, reject) =>
-    canvas.toBlob((blob) => (blob ? resolve(blob) : reject(new Error("PNG 编码失败"))), "image/png")
+    canvas.toBlob((blob) => (blob ? resolve(blob) : reject(runtimeError("errors.pngEncodingFailed"))), "image/png")
   );
 }

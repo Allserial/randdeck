@@ -5,6 +5,7 @@ import { createEmptyStats, normalizeStats } from "../domain/stats";
 import { normalizeTagRules } from "../domain/tags";
 import { normalizeWeightedEntries } from "../domain/weighted";
 import { detectLocaleFromLanguages, normalizePersistedLocale } from "../i18n/locale";
+import { createRuntimeMessage, runtimeError } from "../domain/runtimeMessage";
 
 export const STATE_VERSION = 5 as const;
 export const STORAGE_KEY_V5 = "zhishutai.state.v5";
@@ -497,7 +498,7 @@ export function migrateToV5(value: unknown, sourceLabel = "未知来源"): AppSt
       };
     }
   }
-  if (![1, 2, 3, 4, 5].includes(version)) throw new Error("不支持的数据版本");
+  if (![1, 2, 3, 4, 5].includes(version)) throw runtimeError("errors.unsupportedVersion");
 
   // A persisted state without a locale is legacy data, so it must not inherit
   // the current browser language during migration.
@@ -541,7 +542,9 @@ export function migrateToV5(value: unknown, sourceLabel = "未知来源"): AppSt
   next.migrationNotes = liftNotes(source, sourceLabel, version, countMemory.reset);
 
   const parsed = AppStateV5Schema.safeParse(next);
-  if (!parsed.success) throw new Error(`v5 数据校验失败：${parsed.error.issues[0]?.message || "未知错误"}`);
+  if (!parsed.success) throw runtimeError("errors.validationFailed", {
+    message: parsed.error.issues[0]?.message || createRuntimeMessage("errors.unknown"),
+  });
   return parsed.data as AppState;
 }
 
@@ -570,14 +573,14 @@ export function buildBackup(state: AppState): { schema: typeof BACKUP_SCHEMA_V5;
 }
 
 export function parseBackup(value: unknown): AppState {
-  if (!value || typeof value !== "object") throw new Error("备份内容不是有效对象");
+  if (!value || typeof value !== "object") throw runtimeError("errors.invalidBackupObject");
   const payload = value as Record<string, any>;
   if (payload.schema === BACKUP_SCHEMA_V5 || payload.schema === BACKUP_SCHEMA_V4 || payload.schema === BACKUP_SCHEMA_V3) {
     return migrateToV5(payload.state, payload.schema);
   }
   if ([1, 2, 3, 4, 5].includes(Number(payload.version))) return migrateToV5(payload, "兼容备份");
   if (payload.state && [1, 2, 3, 4, 5].includes(Number(payload.state.version))) return migrateToV5(payload.state, "兼容备份");
-  throw new Error("备份版本不兼容");
+  throw runtimeError("errors.incompatibleBackup");
 }
 
 export function summarizeState(state: AppState): string {

@@ -2,6 +2,7 @@
   "name": "randdeck",
   "private": true,
   "version": "0.6.0",
+  "license": "MIT",
   "packageManager": "npm@11.6.2",
   "engines": {
     "node": ">=24.0.0",
@@ -18,13 +19,14 @@
     "test:watch": "vitest",
     "test:e2e": "playwright test",
     "i18n:verify": "node scripts/verify-i18n.mjs",
+    "privacy:verify": "powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File scripts/verify-privacy.ps1",
     "test:tauri-runtime": "node scripts/tauri-runtime-smoke.mjs",
     "icons:generate": "node scripts/generate-icons.mjs",
     "icons:verify": "node scripts/verify-icons.mjs",
     "tauri": "tauri",
     "tauri:dev": "tauri dev",
-    "tauri:build:portable": "tauri build --no-bundle --config src-tauri/tauri.portable.conf.json",
-    "tauri:build:offline": "tauri build --bundles nsis --config src-tauri/tauri.offline.conf.json"
+    "tauri:build:portable": "powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File scripts/build-tauri.ps1 -Target portable",
+    "tauri:build:offline": "powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File scripts/build-tauri.ps1 -Target offline"
   },
   "dependencies": {
     "@radix-ui/react-dialog": "^1.1.23",

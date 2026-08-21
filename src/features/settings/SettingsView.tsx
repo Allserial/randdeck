@@ -49,7 +49,9 @@ export default function SettingsView() {
   const exportBackup = async () => {
     try {
       await saveLocalFile(
-        `${locale === "en-US" ? "RandDeck" : "掷数台"}-v${APP_VERSION}-backup.json`,
+        locale === "en-US"
+          ? `RandDeck-v${APP_VERSION}-full-backup.json`
+          : `掷数台-v${APP_VERSION}-完整备份.json`,
         JSON.stringify(buildBackup(snapshotState()), null, 2),
         "application/json"
       );
@@ -66,7 +68,7 @@ export default function SettingsView() {
       setRestoreState(state);
       setRestoreOpen(true);
     } catch (error) {
-      setError(t("errors.restoreFailed", { message: (error as Error).message }));
+      setError(t("errors.restoreFailed", { message: translateRuntimeMessage((error as Error).message, t) }));
     }
   };
 
@@ -95,7 +97,7 @@ export default function SettingsView() {
         <div className="settings-band-title">
           <Contrast size={19} />
           <div>
-          <h2>{t("settings.appearance")}</h2>
+            <h2>{t("settings.appearance")}</h2>
             <p>{t("settings.appearanceDescription")}</p>
           </div>
         </div>
@@ -226,7 +228,7 @@ export default function SettingsView() {
               }}
             />
             <span>
-                <strong>{t("settings.clickThrough")}</strong>
+              <strong>{t("settings.clickThrough")}</strong>
               <small>{t("settings.clickThroughHelp")}</small>
             </span>
           </label>
@@ -294,9 +296,12 @@ export default function SettingsView() {
             </Button>
             <Button
               variant="danger"
-              onClick={() => {
+              onClick={async () => {
                 if (restoreState) {
+                  const restoredLocale = restoreState.ui.locale;
                   replaceState(restoreState);
+                  await setAppLocale(restoredLocale);
+                  await setApplicationWindowTitle(restoredLocale);
                   setRestoreOpen(false);
                   setRestoreState(null);
                   setToast(t("settings.restoreBackup"));

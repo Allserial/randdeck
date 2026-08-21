@@ -152,7 +152,58 @@ test("审计回执、完整备份和展示窗口可离线传递当前结果", as
   await page.getByLabel("主导航").getByRole("button", { name: /设置/ }).click();
   const backupDownload = page.waitForEvent("download");
   await page.getByRole("button", { name: /导出完整备份/ }).click();
-  expect((await backupDownload).suggestedFilename()).toBe("掷数台-v0.6.0-backup.json");
+  expect((await backupDownload).suggestedFilename()).toBe("掷数台-v0.6.0-完整备份.json");
+});
+
+test("语言切换、重启持久化、展示窗口与备份恢复保持同步", async ({ page, context }) => {
+  await openApp(page);
+  await page.getByLabel("主导航").getByRole("button", { name: "设置" }).click();
+  await page.getByRole("group", { name: "语言" }).getByRole("button", { name: "English" }).click();
+
+  await expect(page.getByRole("heading", { name: "RandDeck", exact: true })).toBeVisible();
+  await expect(page.getByLabel("Main navigation")).toBeVisible();
+  await expect.poll(() => page.title()).toBe("RandDeck");
+  await expect(page.locator("html")).toHaveAttribute("lang", "en-US");
+
+  await page.waitForTimeout(400);
+  await page.reload();
+  await expect(page.getByRole("heading", { name: "RandDeck", exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Waiting for a draw" })).toBeVisible();
+  await expect(page.getByLabel("Draw mode").getByRole("button", { name: /Range pool/ })).toHaveAttribute("aria-pressed", "true");
+
+  await page.getByLabel("Draw mode").getByRole("button", { name: /Dice expression/ }).click();
+  await page.getByRole("textbox", { name: "Expression" }).fill("2d6+3");
+  await expect(page.getByText("roll 2 d6 plus constant 3")).toBeVisible();
+  await page.getByRole("textbox", { name: "Expression" }).fill("window.alert(1)");
+  await expect(page.getByText("Character 1: unsupported dice identifier window", { exact: true })).toBeVisible();
+  await page.getByRole("textbox", { name: "Expression" }).fill("2d6");
+
+  const popupPromise = context.waitForEvent("page");
+  await page.getByRole("button", { name: "Open display window" }).click();
+  const display = await popupPromise;
+  await display.waitForLoadState("domcontentloaded");
+  await expect(display.getByText("RandDeck · Display")).toBeVisible();
+  await display.close();
+
+  await page.getByLabel("Main navigation").getByRole("button", { name: "Settings" }).click();
+  const backupDownload = page.waitForEvent("download");
+  await page.getByRole("button", { name: "Export full backup" }).click();
+  const download = await backupDownload;
+  expect(download.suggestedFilename()).toBe("RandDeck-v0.6.0-full-backup.json");
+  const stream = await download.createReadStream();
+  const chunks: Buffer[] = [];
+  for await (const chunk of stream) chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+  const backup = JSON.parse(Buffer.concat(chunks).toString("utf8")) as { state: { ui: { locale: string } } };
+  backup.state.ui.locale = "zh-CN";
+
+  await page.locator('input[type="file"][accept*="json"]').setInputFiles({
+    name: "restore-zh.json",
+    mimeType: "application/json",
+    buffer: Buffer.from(JSON.stringify(backup)),
+  });
+  await page.getByRole("dialog").getByRole("button", { name: "Replace data" }).click();
+  await expect(page.getByRole("heading", { name: "掷数台", exact: true })).toBeVisible();
+  await expect(page.locator("html")).toHaveAttribute("lang", "zh-CN");
 });
 
 test("视图切换时抽取台底栏隐藏、骰子预设可点击且展示窗支持多卡换行", async ({ page, context }) => {

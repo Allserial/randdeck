@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { RandomSource } from "./random";
 import { drawWeightedEntries, parseWeightedCsv, validateWeightedEntries, weightedEntriesToCsv } from "./weighted";
+import { parseRuntimeMessage } from "./runtimeMessage";
 
 class SequenceSource implements RandomSource {
   constructor(private values: number[]) {}
@@ -15,7 +16,10 @@ const entries = [
 describe("weighted pool", () => {
   it("rejects duplicate values and invalid weights", () => {
     const result = validateWeightedEntries([...entries, { id: "c", value: 2, weight: 0, tags: [] }]);
-    expect(result.errors.join(" ")).toMatch(/重复|权重/);
+    expect(result.errors.map((error) => parseRuntimeMessage(error)?.key)).toEqual(expect.arrayContaining([
+      "errors.weightedDuplicate",
+      "errors.weightedWeightRange",
+    ]));
   });
 
   it("draws dynamically without replacement", () => {
