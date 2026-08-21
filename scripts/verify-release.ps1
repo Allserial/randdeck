@@ -1,5 +1,5 @@
 param(
-  [string]$Version = "0.5.0"
+  [string]$Version = "0.6.0"
 )
 
 $ErrorActionPreference = "Continue"
@@ -11,6 +11,8 @@ New-Item -ItemType Directory -Path $logDir -Force | Out-Null
 
 $gates = @(
   @{ id = "npm-audit"; command = "npm"; args = @("audit", "--audit-level=low"); cwd = $root },
+  @{ id = "i18n-verify"; command = "npm"; args = @("run", "i18n:verify"); cwd = $root },
+  @{ id = "icons-verify"; command = "npm"; args = @("run", "icons:verify"); cwd = $root },
   @{ id = "lint"; command = "npm"; args = @("run", "lint"); cwd = $root },
   @{ id = "typecheck"; command = "npm"; args = @("run", "typecheck"); cwd = $root },
   @{ id = "unit-component"; command = "npm"; args = @("run", "test"); cwd = $root },

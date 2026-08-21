@@ -25,16 +25,16 @@ main.on("console", (message) => {
 main.on("pageerror", (error) => errors.push(`page: ${error.message}`));
 
 await main.bringToFront();
-await main.getByRole("heading", { name: "掷数台" }).waitFor();
-await main.getByLabel("主导航").getByRole("button", { name: /抽取台/ }).click();
-await main.getByLabel("抽取模式").getByRole("button", { name: /范围池/ }).click();
-await main.getByRole("button", { name: /生成结果/ }).click();
-await main.getByRole("heading", { name: "本次结果" }).waitFor();
+await main.getByRole("heading", { name: /RandDeck|掷数台/ }).waitFor();
+await main.getByLabel("主导航").getByRole("button", { name: /抽取台|Draw/ }).click();
+await main.getByLabel("抽取模式").getByRole("button", { name: /范围池|Range pool/ }).click();
+await main.getByRole("button", { name: /生成结果|Generate result/ }).click();
+await main.getByRole("heading", { name: /本次结果|Current result/ }).waitFor();
 const generatedResultCount = await main.locator(".result-tile").count();
 const normalSize = await main.evaluate(() => ({ width: window.innerWidth, height: window.innerHeight }));
 
 const knownPages = new Set(context.pages());
-await main.getByRole("button", { name: "打开展示窗口" }).click();
+await main.getByRole("button", { name: /打开展示窗口|Open display window/ }).click();
 const display = await context.waitForEvent("page", {
   predicate: (page) => !knownPages.has(page),
   timeout: 10_000,
@@ -49,24 +49,24 @@ await display.locator(".result-tile, .display-results span").first().waitFor();
 const displayUrl = display.url();
 await display.screenshot({ path: resolve(reportDir, "display-window.png") });
 const displayClosed = display.waitForEvent("close");
-await display.getByRole("button", { name: "关闭展示窗口" }).click();
+await display.getByRole("button", { name: /关闭展示窗口|Close display window/ }).click();
 await displayClosed;
 
-await main.getByLabel("主导航").getByRole("button", { name: /数据洞察/ }).click();
+await main.getByLabel("主导航").getByRole("button", { name: /数据洞察|Insights/ }).click();
 await main.locator(".recharts-wrapper").first().waitFor();
 await main.screenshot({ path: resolve(reportDir, "insights-window.png") });
-await main.getByLabel("主导航").getByRole("button", { name: /设置/ }).click();
+await main.getByLabel("主导航").getByRole("button", { name: /设置|Settings/ }).click();
 await main.getByRole("heading", { name: "外观、展示与本地数据" }).waitFor();
 await main.screenshot({ path: resolve(reportDir, "main-window.png") });
 
-const secondInstance = spawn(resolve("src-tauri", "target", "debug", "zhishutai.exe"), [], { windowsHide: true, stdio: "ignore" });
+const secondInstance = spawn(resolve("src-tauri", "target", "debug", "randdeck.exe"), [], { windowsHide: true, stdio: "ignore" });
 const secondInstanceExitCode = await new Promise((resolveExit, rejectExit) => {
   const timeout = setTimeout(() => { secondInstance.kill(); rejectExit(new Error("第二实例未在 5 秒内退出")); }, 5_000);
   secondInstance.once("error", rejectExit);
   secondInstance.once("exit", (code) => { clearTimeout(timeout); resolveExit(code); });
 });
 assert.equal(secondInstanceExitCode, 0, "第二实例退出码异常");
-await main.getByRole("heading", { name: "外观、展示与本地数据" }).waitFor();
+await main.getByRole("heading", { name: /外观、展示与本地数据|Appearance, display and local data/ }).waitFor();
 assert.equal(errors.length, 0, errors.join("\n"));
 
 const report = {

@@ -1,12 +1,13 @@
 param(
-  [string]$Version = "0.5.0",
+  [string]$Version = "0.6.0",
   [string]$InstallerPath = ""
 )
 
 $ErrorActionPreference = "Stop"
 $root = Split-Path -Parent $PSScriptRoot
-if (!$InstallerPath) { $InstallerPath = Join-Path $root "releases\$Version\installer\掷数台-离线安装版-setup.exe" }
+if (!$InstallerPath) { $InstallerPath = Join-Path $root "releases\$Version\installer\RandDeck-v$Version-offline-setup.exe" }
 $installer = (Resolve-Path -LiteralPath $InstallerPath).Path
+$previousInstaller = Join-Path $root "releases\0.5.0\installer\掷数台-离线安装版-setup.exe"
 $appDataDir = Join-Path $env:APPDATA "com.zhishutai.desktop"
 $statePath = Join-Path $appDataDir "state-v5.json"
 $legacyStatePath = Join-Path $appDataDir "state-v4.json"
@@ -18,12 +19,12 @@ New-Item -ItemType Directory -Path $installDir, $backupDir -Force | Out-Null
 
 function Get-UninstallEntries {
   $paths = @("HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\*", "HKLM:\Software\Microsoft\Windows\CurrentVersion\Uninstall\*")
-  @(Get-ItemProperty -Path $paths -ErrorAction SilentlyContinue | Where-Object DisplayName -Like "*掷数台*" | ForEach-Object { "$($_.PSPath)|$($_.DisplayVersion)|$($_.InstallLocation)" })
+  @(Get-ItemProperty -Path $paths -ErrorAction SilentlyContinue | Where-Object DisplayName -Like "*RandDeck*" | ForEach-Object { "$($_.PSPath)|$($_.DisplayVersion)|$($_.InstallLocation)" })
 }
 
 function Get-ProductShortcuts {
   $roots = @([Environment]::GetFolderPath("Desktop"), [Environment]::GetFolderPath("Programs"))
-  @(foreach ($shortcutRoot in $roots) { if (Test-Path -LiteralPath $shortcutRoot) { Get-ChildItem -LiteralPath $shortcutRoot -Filter "*掷数台*.lnk" -File -Recurse -ErrorAction SilentlyContinue | Select-Object -ExpandProperty FullName } })
+  @(foreach ($shortcutRoot in $roots) { if (Test-Path -LiteralPath $shortcutRoot) { Get-ChildItem -LiteralPath $shortcutRoot -Filter "*RandDeck*.lnk" -File -Recurse -ErrorAction SilentlyContinue | Select-Object -ExpandProperty FullName } })
 }
 
 $sandbox = Test-Path -LiteralPath (Join-Path $env:WINDIR "System32\WindowsSandbox.exe")
@@ -42,6 +43,14 @@ $report = [ordered]@{
   mode = if ($sandbox) { "windows-sandbox-available-but-current-user-fallback" } else { "current-user-temporary-directory" }
   windowsSandboxAvailable = $sandbox
   installerSha256 = (Get-FileHash -LiteralPath $installer -Algorithm SHA256).Hash.ToLowerInvariant()
+  statePath = "%APPDATA%\com.zhishutai.desktop\state-v5.json"
+  previousInstaller = [ordered]@{
+    path = "releases\0.5.0\installer\掷数台-离线安装版-setup.exe"
+    exists = Test-Path -LiteralPath $previousInstaller
+    bytes = if (Test-Path -LiteralPath $previousInstaller) { (Get-Item -LiteralPath $previousInstaller).Length } else { $null }
+    sha256 = if (Test-Path -LiteralPath $previousInstaller) { (Get-FileHash -LiteralPath $previousInstaller -Algorithm SHA256).Hash.ToLowerInvariant() } else { $null }
+    deltaBytes = if (Test-Path -LiteralPath $previousInstaller) { (Get-Item -LiteralPath $installer).Length - (Get-Item -LiteralPath $previousInstaller).Length } else { $null }
+  }
   installExitCode = $null
   installedExecutable = $null
   launched = $false
@@ -69,7 +78,7 @@ try {
   $report.uninstallEntryAdded = @($uninstallAfterInstall | Where-Object { $uninstallBefore -notcontains $_ }).Count -gt 0
   $report.newShortcutCount = @($shortcutsAfterInstall | Where-Object { $shortcutsBefore -notcontains $_ }).Count
 
-  $installedExe = Get-ChildItem -LiteralPath $installDir -Filter "*.exe" -File | Where-Object Name -NotLike "uninstall*" | Select-Object -First 1
+  $installedExe = Get-Item -LiteralPath (Join-Path $installDir "RandDeck.exe") -ErrorAction SilentlyContinue
   if (!$installedExe) { throw "临时安装目录中没有找到应用 EXE" }
   $report.installedExecutable = $installedExe.Name
   $process = Start-Process -FilePath $installedExe.FullName -WorkingDirectory $installDir -WindowStyle Hidden -PassThru
@@ -92,7 +101,7 @@ try {
   $shortcutsAfterRemove = Get-ProductShortcuts
   $report.uninstallEntryRemoved = @($uninstallAfterInstall | Where-Object { $uninstallBefore -notcontains $_ -and $uninstallAfterRemove -notcontains $_ }).Count -eq @($uninstallAfterInstall | Where-Object { $uninstallBefore -notcontains $_ }).Count
   $report.shortcutsRemoved = @($shortcutsAfterInstall | Where-Object { $shortcutsBefore -notcontains $_ -and $shortcutsAfterRemove -contains $_ }).Count -eq 0
-  $report.passed = $report.launched -and $report.uninstallEntryRemoved -and $report.shortcutsRemoved
+  $report.passed = $report.installedExecutable -eq "RandDeck.exe" -and $report.launched -and $report.uninstallEntryAdded -and $report.newShortcutCount -gt 0 -and $report.uninstallEntryRemoved -and $report.shortcutsRemoved
 } catch {
   $report.error = $_.Exception.Message
 } finally {

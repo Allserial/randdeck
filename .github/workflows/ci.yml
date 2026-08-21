@@ -23,6 +23,8 @@ jobs:
           components: rustfmt
       - name: Install dependencies
         run: npm ci
+      - name: Verify localization resources
+        run: npm run i18n:verify
       - name: Validate icons
         run: npm run icons:verify
       - name: Lint
@@ -36,6 +38,24 @@ jobs:
       - name: Check Rust formatting
         working-directory: src-tauri
         run: cargo fmt --check
+      - name: Run Rust tests
+        working-directory: src-tauri
+        run: cargo test
       - name: Check Rust
         working-directory: src-tauri
         run: cargo check --locked
+
+  e2e:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: npm
+      - name: Install dependencies
+        run: npm ci
+      - name: Install Chromium
+        run: npx playwright install chromium
+      - name: Run browser E2E tests
+        run: npm run test:e2e

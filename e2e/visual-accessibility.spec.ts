@@ -57,7 +57,7 @@ test("骰子表达式使用 2D 骰面而不是 WebGL", async ({ page }) => {
   await page.goto("/");
   await page.getByLabel("抽取模式").getByRole("button", { name: /骰子/ }).click();
   await page.getByRole("group", { name: "求值方式" }).getByRole("button", { name: "单次" }).click();
-  await page.getByLabel("表达式").fill("2d6");
+  await page.getByRole("textbox", { name: "表达式" }).fill("2d6");
   await page.getByRole("button", { name: /生成结果/ }).click();
   await expect(page.getByRole("heading", { name: "本次结果" })).toBeVisible({ timeout: 20_000 });
   await expect(page.locator(".die-face")).toHaveCount(2);

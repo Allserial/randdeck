@@ -1,5 +1,5 @@
 param(
-  [string]$Version = "0.5.0",
+  [string]$Version = "0.6.0",
   [switch]$Force
 )
 
@@ -7,7 +7,7 @@ $ErrorActionPreference = "Stop"
 $root = Split-Path -Parent $PSScriptRoot
 $releaseBase = Join-Path $root "releases"
 $releaseRoot = Join-Path $releaseBase $Version
-$portableSource = Join-Path $root "src-tauri\target\release\zhishutai.exe"
+$portableSource = Join-Path $root "src-tauri\target\release\randdeck.exe"
 $nsisDir = Join-Path $root "src-tauri\target\release\bundle\nsis"
 $verificationPath = Join-Path $root "reports\v$Version-verification.json"
 
@@ -35,8 +35,8 @@ if (Test-Path -LiteralPath $releaseRoot) {
 $portableDir = Join-Path $releaseRoot "portable"
 $installerDir = Join-Path $releaseRoot "installer"
 New-Item -ItemType Directory -Path $portableDir, $installerDir -Force | Out-Null
-$portableTarget = Join-Path $portableDir "掷数台.exe"
-$installerTarget = Join-Path $installerDir "掷数台-离线安装版-setup.exe"
+$portableTarget = Join-Path $portableDir "RandDeck.exe"
+$installerTarget = Join-Path $installerDir "RandDeck-v$Version-offline-setup.exe"
 Copy-Item -LiteralPath $portableSource -Destination $portableTarget
 Copy-Item -LiteralPath $installerSource.FullName -Destination $installerTarget
 $signScript = Join-Path $PSScriptRoot "sign-release.ps1"
@@ -72,7 +72,7 @@ $installer = Get-Artifact $installerTarget "nsis-offline-installer" "offlineInst
 $portableMiB = [math]::Round($portable.bytes / 1MB, 2)
 if ($portable.bytes -gt 35MB) { throw "便携版为 $portableMiB MiB，超过 35 MiB 暂停线。" }
 
-$previousInstaller = Join-Path $releaseBase "0.4.0\installer\掷数台-离线安装版-setup.exe"
+$previousInstaller = Join-Path $releaseBase "0.5.0\installer\掷数台-离线安装版-setup.exe"
 $installerDeltaMiB = $null
 if (Test-Path -LiteralPath $previousInstaller) {
   $installerDeltaMiB = [math]::Round(($installer.bytes - (Get-Item -LiteralPath $previousInstaller).Length) / 1MB, 2)
@@ -140,7 +140,7 @@ $manifest = [pscustomobject]@{
   smartScreenNote = if ($releaseSigned) { "已使用本机证书进行 Authenticode 签名。" } else { "未进行代码签名，Windows SmartScreen 可能显示未知发布者。" }
   platform = "windows-x86_64"
   webView2 = [pscustomobject]@{ detectedRuntimeVersion = $webView2Version; portable = "system-evergreen-required"; installer = "offlineInstaller" }
-  sizeAssessment = [pscustomobject]@{ portableMiB = $portableMiB; portableTargetMiB = 25; installerMiB = [math]::Round($installer.bytes / 1MB, 2); installerDeltaFrom030MiB = $installerDeltaMiB; installerDeltaTargetMiB = 30 }
+  sizeAssessment = [pscustomobject]@{ portableMiB = $portableMiB; portableTargetMiB = 25; installerMiB = [math]::Round($installer.bytes / 1MB, 2); installerDeltaFromV050MiB = $installerDeltaMiB; installerDeltaTargetMiB = 30 }
   toolchain = [pscustomobject]@{
     node = Get-ToolVersion "node" @("--version")
     npm = Get-ToolVersion "npm" @("--version")

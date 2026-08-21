@@ -79,7 +79,7 @@ const tickWav = createWavBuffer(sampleRate, 0.06, (t) => {
 
 fs.writeFileSync(path.join(audioDir, "countdown-tick.wav"), tickWav);
 
-const sourcesContent = `# 掷数台 (Zhishutai) 离线音频素材说明
+const sourcesContent = `# RandDeck / 掷数台 离线音频素材说明
 
 本项目所有音频素材均为本地离线生成与使用，遵循 CC0 1.0 Universal (CC0 1.0) 公共领域许可协议。
 

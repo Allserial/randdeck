@@ -1,9 +1,9 @@
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
-  "productName": "掷数台",
-  "version": "0.5.0",
+  "productName": "RandDeck",
+  "version": "0.6.0",
   "identifier": "com.zhishutai.desktop",
-  "mainBinaryName": "zhishutai",
+  "mainBinaryName": "randdeck",
   "build": {
     "frontendDist": "../dist",
     "devUrl": "http://localhost:5173",
@@ -14,7 +14,7 @@
     "windows": [
       {
         "label": "main",
-        "title": "掷数台",
+        "title": "RandDeck",
         "width": 1180,
         "height": 820,
         "minWidth": 680,

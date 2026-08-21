@@ -13,6 +13,7 @@ import { Segmented } from "../../components/ui/Segmented";
 import { setAppLocale } from "../../i18n";
 import { translateRuntimeMessage } from "../../i18n/messages";
 import type { AppLocale } from "../../domain/types";
+import { APP_VERSION } from "../../app/version";
 
 export default function SettingsView() {
   const { t } = useTranslation();
@@ -48,7 +49,7 @@ export default function SettingsView() {
   const exportBackup = async () => {
     try {
       await saveLocalFile(
-        `${locale === "en-US" ? "RandDeck" : "掷数台"}-v0.6.0-backup.json`,
+        `${locale === "en-US" ? "RandDeck" : "掷数台"}-v${APP_VERSION}-backup.json`,
         JSON.stringify(buildBackup(snapshotState()), null, 2),
         "application/json"
       );
@@ -86,7 +87,7 @@ export default function SettingsView() {
           <span className="section-label">{t("settings.system")}</span>
           <h1>{t("settings.heading")}</h1>
         </div>
-        <span className="version-chip">v0.5.0</span>
+        <span className="version-chip">v{APP_VERSION}</span>
       </header>
 
       {/* 外观与反馈 */}

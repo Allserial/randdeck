@@ -1,7 +1,7 @@
 {
-  "name": "zhishutai",
+  "name": "randdeck",
   "private": true,
-  "version": "0.5.0",
+  "version": "0.6.0",
   "packageManager": "npm@11.6.2",
   "engines": {
     "node": ">=24.0.0",

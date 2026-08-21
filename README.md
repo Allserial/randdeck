@@ -1,48 +1,51 @@
-# 掷数台
+# RandDeck
 
-掷数台是面向 Windows 11 x64 的离线随机抽取工作台，使用 React、TypeScript、Vite、Tauri 2 和 Rust 构建。随机结果在本地生成，不使用远程字体、网络 API、账户、遥测或自动更新。
+RandDeck is an offline random draw workbench for Windows 11 x64. It is built with React, TypeScript, Vite, Tauri 2, and Rust. Results are generated locally with Web Crypto; the application does not use remote fonts, network APIs, accounts, telemetry, or automatic updates.
 
-![掷数台界面](docs/images/掷数台界面.png)
+Chinese documentation: [README.zh-CN.md](README.zh-CN.md). Product name in Chinese: **掷数台**.
 
-## 主要功能
+![RandDeck interface](docs/images/掷数台界面.png)
 
-- 范围池、自定义数字池和骰子表达式三种抽取模式
-- 整数、闭区间、奇数、偶数排除规则与“抽后移除”
-- Web Crypto 无偏随机，生成动画不参与结果计算
-- 单项选择、局部重掷、固定结果、加入排除和事务撤销
-- 三种模式分别记忆抽取数量
-- 3/5/10 秒倒计时与 `Space`、`Enter`、`Shift+Space` 快捷键
-- 历史记录、频次、覆盖率、趋势和概率分析
-- JSON、CSV、PNG、审计回执和完整备份
-- 深色、浅色、高对比主题与减少动态效果支持
-- 完全离线运行，数据保存在本机
+## Features
 
-## 下载
+- Range pools, custom number pools, and dice expressions
+- Integer, interval, odd, and even exclusion rules with draw-and-remove mode
+- Unbiased local Web Crypto randomness; animation never determines the result
+- Selective rerolls, fixed results, exclusion shortcuts, and transaction undo
+- Independent draw-count memory for each mode
+- Countdown generation with `Space`, `Enter`, and `Shift+Space`
+- History, frequency, coverage, trend, and probability analysis
+- JSON, CSV, PNG receipts, audit receipts, and full backups
+- Dark, light, and high-contrast themes with reduced-motion support
+- Fully offline local storage
 
-请从 GitHub Releases 下载：
+## Downloads
 
-- `掷数台.exe`：单文件便携版，目标电脑需要已有 Microsoft Edge WebView2 Runtime。
-- `掷数台-v0.5.0-便携完整包.zip`：多文件便携包，包含程序、使用说明、许可证和 SHA256 校验文件。
-- `掷数台-离线安装版-setup.exe`：离线安装程序，内置 WebView2 安装能力，文件较大。
+Download releases from [GitHub Releases](https://github.com/Allserial/randdeck/releases):
 
-当前版本未进行代码签名，Windows SmartScreen 可能显示“未知发布者”。请只从本仓库 Releases 下载，并使用发布页提供的 SHA256 校验值核对文件。
+- `RandDeck.exe`: single-file portable build; Microsoft Edge WebView2 Runtime must already be installed.
+- `RandDeck-v0.6.0-portable.zip`: multi-file portable package with bilingual documentation, license, manifest, and SHA256 checksums.
+- `RandDeck-v0.6.0-offline-setup.exe`: offline installer with WebView2 installation support.
 
-## 本地开发
+The release is not code-signed. Windows SmartScreen may show an unknown-publisher warning. Verify the published SHA256 value before running an artifact.
 
-环境要求：Node.js 24 LTS、npm 11、Rust stable、Microsoft C++ Build Tools 和 WebView2 Runtime。
+## Local development
+
+Requirements: Node.js 24 LTS, npm 11, stable Rust, Microsoft C++ Build Tools, and WebView2 Runtime.
 
 ```powershell
-git clone https://github.com/Allserial/zhishutai.git
-Set-Location .\zhishutai
+git clone https://github.com/Allserial/randdeck.git
+Set-Location .\randdeck
 npm install
 npm run dev
 ```
 
-浏览器默认访问 `http://localhost:5173/`。
+The browser development URL is `http://localhost:5173/`.
 
-常用质量检查：
+Common checks:
 
 ```powershell
+npm run i18n:verify
 npm run icons:verify
 npm run lint
 npm run typecheck
@@ -51,7 +54,7 @@ npm run test:e2e
 npm run build
 ```
 
-Tauri 开发与构建：
+Tauri development and builds:
 
 ```powershell
 npm run tauri:dev
@@ -59,18 +62,19 @@ npm run tauri:build:portable
 npm run tauri:build:offline
 ```
 
-## 本地数据
+## Local data and compatibility
 
-- Tauri 状态文件：`%APPDATA%\com.zhishutai.desktop\state-v5.json`
-- 浏览器调试版：IndexedDB `zhishutai-v5`
-- 备份格式：`zhishutai.backup.v5`
+- Tauri state: `%APPDATA%\com.zhishutai.desktop\state-v5.json`
+- Browser debugging state: IndexedDB database `zhishutai-v5`
+- Backup format: `zhishutai.backup.v5`
+- Receipt and release schema identifiers continue to use the `zhishutai.*` namespace.
 
-应用不会上传这些数据。卸载或手动清理应用数据前，请先在设置中导出完整备份。
+These internal identifiers are deliberately unchanged so existing v0.5.0 installations can upgrade without losing data. They are compatibility identifiers, not the public product name. The application does not upload this data. Export a full backup in Settings before moving or uninstalling the application.
 
-## 安全与隐私
+## Security and privacy
 
-仓库不应包含真实账号、邮箱、令牌、私钥、本机绝对路径、应用数据或个人测试记录。安全问题请按照 [SECURITY.md](SECURITY.md) 使用 GitHub 的私密安全报告渠道。
+The repository must not contain real credentials, private keys, local absolute paths, application data, or personal test records. See [SECURITY.md](SECURITY.md) for private vulnerability reporting.
 
-## 许可证
+## License
 
-本项目采用 [MIT License](LICENSE)。第三方依赖仍分别遵循各自许可证，正式 Release 附带依赖许可证清单。
+RandDeck is released under the [MIT License](LICENSE). Third-party dependencies retain their own licenses; release packages include a dependency license report.

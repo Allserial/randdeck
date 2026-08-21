@@ -40,7 +40,7 @@ test("范围排除、抽后移除、事务撤销形成完整闭环", async ({ pa
   await page.getByRole("button", { name: "重掷所选" }).click();
   const rerolled = await resultValues(page);
   expect(rerolled[0]).toBe(first[0]);
-  await expect(page.getByText(/未重算固定结果/)).toBeVisible();
+  await expect(page.getByText(/已固定 1 项|1 pinned/)).toBeVisible();
 
   await page.getByRole("switch", { name: /抽后移除/ }).click();
   await page.locator(".stepper input").fill("3");
@@ -49,8 +49,8 @@ test("范围排除、抽后移除、事务撤销形成完整闭环", async ({ pa
   expect(new Set(noDup).size).toBe(3);
   expect(noDup[0]).toBe(first[0]);
   await expect(page.getByRole("button", { name: /重置已抽记录/ })).toBeVisible();
-  await page.getByRole("button", { name: "撤销抽取" }).click();
-  await expect(page.getByText("已撤销上一笔抽取及其统计")).toBeVisible();
+  await page.getByRole("button", { name: /撤销本次抽取|Undo this draw/ }).click();
+  await expect(page.getByRole("status").getByText(/撤销本次抽取|Undo this draw/)).toBeVisible();
 });
 
 test("局部重掷只滚动所选卡片，固定结果参与普通生成", async ({ page }) => {
@@ -123,7 +123,7 @@ test("自定义池、骰子表达式、倒计时后生成和概率分析均可�
   expect((await resultValues(page)).every((value) => [11, 12, 13, 14].includes(value))).toBeTruthy();
 
   await page.getByLabel("抽取模式").getByRole("button", { name: /骰子表达式/ }).click();
-  await page.getByLabel("表达式").fill("2d6+1");
+  await page.getByRole("textbox", { name: "表达式" }).fill("2d6+1");
   await page.getByRole("button", { name: /生成结果/ }).click();
   const dice = await resultValues(page);
   expect(dice.every((value) => value >= 3 && value <= 13)).toBeTruthy();
@@ -152,7 +152,7 @@ test("审计回执、完整备份和展示窗口可离线传递当前结果", as
   await page.getByLabel("主导航").getByRole("button", { name: /设置/ }).click();
   const backupDownload = page.waitForEvent("download");
   await page.getByRole("button", { name: /导出完整备份/ }).click();
-  expect((await backupDownload).suggestedFilename()).toBe("掷数台-v0.5.0-完整备份.json");
+  expect((await backupDownload).suggestedFilename()).toBe("掷数台-v0.6.0-backup.json");
 });
 
 test("视图切换时抽取台底栏隐藏、骰子预设可点击且展示窗支持多卡换行", async ({ page, context }) => {
@@ -170,7 +170,7 @@ test("视图切换时抽取台底栏隐藏、骰子预设可点击且展示窗�
   const preset4d6 = page.locator(".dice-presets button", { hasText: "4d6kh3" });
   await expect(preset4d6).toBeVisible();
   await preset4d6.click();
-  await expect(page.getByLabel("表达式")).toHaveValue("4d6kh3");
+  await expect(page.getByRole("textbox", { name: "表达式" })).toHaveValue("4d6kh3");
 
   // 3. 切到数据洞察，验证「生成结果」按钮在主窗口中不可见且不可点击
   await page.getByLabel("主导航").getByRole("button", { name: /数据洞察/ }).click();
