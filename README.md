@@ -29,7 +29,7 @@
 
 ## 本地开发
 
-环境要求：Node.js LTS、npm、Rust stable、Microsoft C++ Build Tools 和 WebView2 Runtime。
+环境要求：Node.js 24 LTS、npm 11、Rust stable、Microsoft C++ Build Tools 和 WebView2 Runtime。
 
 ```powershell
 git clone https://github.com/Allserial/zhishutai.git
