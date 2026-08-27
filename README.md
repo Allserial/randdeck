@@ -1,37 +1,38 @@
 # RandDeck
 
-RandDeck is an offline random draw workbench for Windows 11 x64. It is built with React, TypeScript, Vite, Tauri 2, and Rust. Results are generated locally with Web Crypto; the application does not use remote fonts, network APIs, accounts, telemetry, or automatic updates.
+Draw numbers, pick from a list you type in, or roll dice. It runs on Windows 11 x64 and works fully offline — no account, no internet, no auto-update.
 
-Chinese documentation: [README.zh-CN.md](README.zh-CN.md). Product name in Chinese: **掷数台**.
+Chinese name: **掷数台**. 中文说明：[README.zh-CN.md](README.zh-CN.md).
 
 ![RandDeck interface](docs/images/掷数台界面.png)
 
-## Features
+## What it can do
 
-- Range pools, custom number pools, and dice expressions
-- Integer, interval, odd, and even exclusion rules with draw-and-remove mode
-- Unbiased local Web Crypto randomness; animation never determines the result
-- Selective rerolls, fixed results, exclusion shortcuts, and transaction undo
-- Independent draw-count memory for each mode
-- Countdown generation with `Space`, `Enter`, and `Shift+Space`
-- History, frequency, coverage, trend, and probability analysis
-- JSON, CSV, PNG receipts, audit receipts, and full backups
-- Dark, light, and high-contrast themes with reduced-motion support
-- Fully offline local storage
+- Draw from a number range, a custom list, or a dice expression such as `2d6+3`
+- Skip one number, a range, odds, or evens; optionally take a number out of the pool after it is drawn
+- Numbers are generated on this computer. The animation is only for watching.
+- Reroll just the results you select, pin a result so the next draw keeps it, add a number to the skip list, or undo the last draw
+- Each mode remembers how many numbers you last asked for
+- `Space` or `Enter` draws immediately; `Shift+Space` starts a countdown first
+- History, plus frequency, coverage, trend, and probability views
+- Export JSON, CSV, or PNG; make a full backup in Settings
+- Dark, light, and high-contrast themes; reduced-motion is supported
+- Switch the whole UI between Chinese and English in Settings
+- No accounts, no telemetry, no auto-update, no cloud. Data stays on this computer.
 
 ## Downloads
 
-Download releases from [GitHub Releases](https://github.com/Allserial/randdeck/releases):
+Get it from [GitHub Releases](https://github.com/Allserial/randdeck/releases):
 
-- `RandDeck.exe`: single-file portable build; Microsoft Edge WebView2 Runtime must already be installed.
-- `RandDeck-v0.6.0-portable.zip`: multi-file portable package with bilingual documentation, license, manifest, and SHA256 checksums.
-- `RandDeck-v0.6.0-offline-setup.exe`: offline installer with WebView2 installation support.
+- `RandDeck.exe`: one file. Microsoft Edge WebView2 Runtime must already be installed.
+- `RandDeck-v0.6.0-portable.zip`: unzip and run. Includes docs, license, a manifest, and SHA256 checksums.
+- `RandDeck-v0.6.0-offline-setup.exe`: installer. Can install WebView2 if the PC does not have it.
 
-The release is not code-signed. Windows SmartScreen may show an unknown-publisher warning. Verify the published SHA256 value before running an artifact.
+This release is not code-signed. Windows SmartScreen may warn about an unknown publisher. Check the published SHA256 before you run a file.
 
 ## Local development
 
-Requirements: Node.js 24 LTS, npm 11, stable Rust, Microsoft C++ Build Tools, and WebView2 Runtime.
+You need Node.js 24 LTS, npm 11, stable Rust, Microsoft C++ Build Tools, and WebView2 Runtime.
 
 ```powershell
 git clone https://github.com/Allserial/randdeck.git
@@ -67,14 +68,14 @@ npm run tauri:build:portable
 - Tauri state: `%APPDATA%\com.zhishutai.desktop\state-v5.json`
 - Browser debugging state: IndexedDB database `zhishutai-v5`
 - Backup format: `zhishutai.backup.v5`
-- Receipt and release schema identifiers continue to use the `zhishutai.*` namespace.
+- Receipt and release schema identifiers still use the `zhishutai.*` namespace.
 
-These internal identifiers are deliberately unchanged so existing v0.5.0 installations can upgrade without losing data. They are compatibility identifiers, not the public product name. The application does not upload this data. Export a full backup in Settings before moving or uninstalling the application.
+Those paths and IDs are left as they were so a v0.5.0 install can upgrade without losing data. They are old internal names, not the public product name. Nothing here is uploaded. Export a full backup in Settings before you move or uninstall the app.
 
-## Security and privacy
+## Security
 
-The repository must not contain real credentials, private keys, local absolute paths, application data, or personal test records. See [SECURITY.md](SECURITY.md) for private vulnerability reporting.
+This repo should not contain real credentials, private keys, local absolute paths, application data, or personal test records. To report a vulnerability privately, see [SECURITY.md](SECURITY.md).
 
 ## License
 
-RandDeck is released under the [MIT License](LICENSE). Third-party dependencies retain their own licenses; release packages include a dependency license report.
+RandDeck is released under the [MIT License](LICENSE). Third-party libraries keep their own licenses; release packages include a dependency license report.

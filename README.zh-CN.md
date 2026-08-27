@@ -1,37 +1,38 @@
-# RandDeck / 掷数台
+# 掷数台
 
-RandDeck（掷数台）是面向 Windows 11 x64 的离线随机抽取工作台，使用 React、TypeScript、Vite、Tauri 2 和 Rust 构建。随机结果在本地使用 Web Crypto 生成，不使用远程字体、网络 API、账户、遥测或自动更新。
+在 Windows 上抽数字、从自己写的名单里抽，或者掷骰子。完全离线，不需要账号，也不联网。Windows 11 x64。
 
-English documentation: [README.md](README.md)。
+软件英文名是 RandDeck。English documentation: [README.md](README.md)。
 
-![RandDeck 界面](docs/images/掷数台界面.png)
+![掷数台界面](docs/images/掷数台界面.png)
 
-## 主要功能
+## 能做什么
 
-- 范围池、自定义数字池和骰子表达式
-- 整数、闭区间、奇数、偶数排除规则与“抽后移除”
-- Web Crypto 无偏随机，生成动画不参与结果计算
-- 单项选择、局部重掷、固定结果、加入排除和事务撤销
-- 三种模式分别记忆抽取数量
-- `Space`、`Enter` 和 `Shift+Space` 快捷生成及倒计时
-- 历史记录、频次、覆盖率、趋势和概率分析
-- JSON、CSV、PNG、审计回执和完整备份
-- 深色、浅色、高对比主题与减少动态效果支持
-- 完全离线运行，数据保存在本机
+- 按范围抽、从自定义名单抽，或者掷骰子（比如 `2d6+3`）
+- 可以排除某个数、一段区间、奇数或偶数；也可以抽完就从池子里拿走
+- 数字在这台电脑上生成，动画只是看着热闹
+- 可以只重掷选中的结果、把某个结果固定住、把数字加进排除，或者撤销上一次抽取
+- 三种模式各自记住你上次抽几个
+- `Space` / `Enter` 立刻抽；`Shift+Space` 先倒计时再抽
+- 有历史记录，也能看频次、覆盖、趋势和概率
+- 能导出 JSON、CSV、PNG，也能在设置里做完整备份
+- 深色、浅色、高对比主题，还可以减少动画
+- 设置里可以把整个界面换成中文或英文
+- 没有账号、不上报使用数据、不自动更新、也不上云。数据只在本机。
 
 ## 下载
 
-请从 [GitHub Releases](https://github.com/Allserial/randdeck/releases) 下载：
+从 [GitHub Releases](https://github.com/Allserial/randdeck/releases) 下载：
 
-- `RandDeck.exe`：单文件便携版，目标电脑需要已有 Microsoft Edge WebView2 Runtime。
-- `RandDeck-v0.6.0-portable.zip`：多文件便携包，包含中英文说明、许可证、清单和 SHA256 校验文件。
-- `RandDeck-v0.6.0-offline-setup.exe`：离线安装程序，内置 WebView2 安装能力。
+- `RandDeck.exe`：一个文件就能用。电脑上要已经装好 Microsoft Edge WebView2 Runtime。
+- `RandDeck-v0.6.0-portable.zip`：解压后用。里面有说明、许可证、清单和 SHA256。
+- `RandDeck-v0.6.0-offline-setup.exe`：安装包。电脑没有 WebView2 时，它可以帮你装。
 
-当前版本未进行代码签名，Windows SmartScreen 可能显示“未知发布者”。运行前请核对发布页提供的 SHA256 值。
+这个版本没做代码签名。Windows SmartScreen 可能会提示「未知发布者」。运行前请核对发布页上的 SHA256。
 
 ## 本地开发
 
-环境要求：Node.js 24 LTS、npm 11、Rust stable、Microsoft C++ Build Tools 和 WebView2 Runtime。
+需要 Node.js 24 LTS、npm 11、Rust stable、Microsoft C++ Build Tools 和 WebView2 Runtime。
 
 ```powershell
 git clone https://github.com/Allserial/randdeck.git
@@ -40,9 +41,9 @@ npm install
 npm run dev
 ```
 
-浏览器默认访问 `http://localhost:5173/`。
+浏览器默认打开 `http://localhost:5173/`。
 
-常用质量检查：
+常用检查：
 
 ```powershell
 npm run i18n:verify
@@ -54,7 +55,7 @@ npm run test:e2e
 npm run build
 ```
 
-Tauri 开发与构建：
+Tauri 开发和打包：
 
 ```powershell
 npm run tauri:dev
@@ -62,19 +63,19 @@ npm run tauri:build:offline
 npm run tauri:build:portable
 ```
 
-## 本地数据与兼容性
+## 本机数据和兼容
 
 - Tauri 状态文件：`%APPDATA%\com.zhishutai.desktop\state-v5.json`
 - 浏览器调试版：IndexedDB `zhishutai-v5`
 - 备份格式：`zhishutai.backup.v5`
-- 回执和发布 schema 继续使用 `zhishutai.*` 命名空间
+- 回执和发布 schema 继续用 `zhishutai.*` 命名空间
 
-这些内部标识为了让 v0.5.0 原地升级时继续读取已有数据而保持不变。它们是兼容性标识，不是公开产品名。应用不会上传这些数据。迁移电脑或卸载前，请在“设置”中导出完整 JSON 备份。
+这些内部名字是故意没改的，这样从 v0.5.0 升上来不会丢数据。它们不是对外产品名。应用不会上传这些数据。换电脑或卸载前，请在「设置」里导出完整备份。
 
-## 安全与隐私
+## 安全
 
-仓库不应包含真实账号、邮箱、令牌、私钥、本机绝对路径、应用数据或个人测试记录。安全问题请按照 [SECURITY.md](SECURITY.md) 使用 GitHub 的私密安全报告渠道。
+仓库里不要放真实账号、令牌、私钥、本机绝对路径、应用数据或个人测试记录。安全问题请按 [SECURITY.md](SECURITY.md) 用 GitHub 的私密渠道报告。
 
 ## 许可证
 
-本项目采用 [MIT License](LICENSE)。第三方依赖仍分别遵循各自许可证，正式发布包附带依赖许可证清单。
+本项目使用 [MIT License](LICENSE)。第三方依赖各自有自己的许可证，正式发布包里会附一份依赖许可证清单。
