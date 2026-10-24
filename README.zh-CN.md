@@ -25,8 +25,8 @@
 从 [GitHub Releases](https://github.com/Allserial/randdeck/releases) 下载：
 
 - `RandDeck.exe`：一个文件就能用。电脑上要已经装好 Microsoft Edge WebView2 Runtime。
-- `RandDeck-v0.6.0-portable.zip`：解压后用。里面有说明、许可证、清单和 SHA256。
-- `RandDeck-v0.6.0-offline-setup.exe`：安装包。电脑没有 WebView2 时，它可以帮你装。
+- `RandDeck-v0.7.0-portable.zip`：解压后用。里面有说明、许可证、清单和 SHA256。
+- `RandDeck-v0.7.0-offline-setup.exe`：安装包。电脑没有 WebView2 时，它可以帮你装。
 
 这个版本没做代码签名。Windows SmartScreen 可能会提示「未知发布者」。运行前请核对发布页上的 SHA256。
 

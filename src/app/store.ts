@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import { pinConfigurationChanged, historyPresentation, transactionPresentation, type ResultPresentationContext } from "./resultPresentation";
 import type { AppLocale, AppState, AppView, CeremonyState, CopyFormat, CountMemoryMode, DrawMode, DrawSession, DrawSettings, DrawTransaction, HistoryEntry, InsightsTab, PoolsState, SessionTransactionRecord } from "../domain/types";
 import { applyStatsDelta, resetStats } from "../domain/stats";
 import { createId } from "../domain/random";
@@ -7,6 +8,7 @@ import { createPersistenceAdapter, loadPersistedState, savePersistedState, type 
 import { createRuntimeMessage, messageFromUnknown } from "../domain/runtimeMessage";
 
 interface RuntimeState {
+  resultPresentation: ResultPresentationContext | null;
   hydrated: boolean;
   hydrationSource: string;
   warnings: string[];
@@ -45,11 +47,13 @@ interface AppActions {
   setToast(message: string): void;
   setResultInteraction(updates: Partial<ResultInteractionState>): void;
   clearResultInteraction(): void;
+  syncPresentationPinScope(pinScopeKey: string | null, configUpdates?: Partial<DrawSettings>): void;
   commitTransaction(transaction: DrawTransaction): void;
   revertTransaction(transactionId: string): boolean;
   resetPool(): void;
   deleteHistory(id: string): void;
   clearHistory(): void;
+  updateHistoryNote(id: string, note: string): void;
   resetModeStats(mode: DrawMode): void;
   recallHistory(id: string): void;
   revertSession(id: string): boolean;
@@ -153,6 +157,8 @@ function removeTransactions(state: AppStore, ids: Set<string>, fallbackRecords: 
     history,
     stats,
     currentResults: history[0]?.results || [],
+    resultPresentation: historyPresentation(history[0]),
+    resultInteraction: structuredClone(defaultResultInteraction),
     drawState: {
       ...state.drawState,
       usedValues: state.drawState.usedValues.filter((value) => !usedToRemove.has(value)),
@@ -179,6 +185,7 @@ const defaultResultInteraction: ResultInteractionState = {
 
 export const useAppStore = create<AppStore>((set, get) => ({
   ...initial,
+  resultPresentation: null,
   hydrated: false,
   hydrationSource: "pending",
   warnings: [],
@@ -211,6 +218,8 @@ export const useAppStore = create<AppStore>((set, get) => ({
           : clampCount(state.settings.count, countByMode[currentMode]);
 
       return {
+        ...(pinConfigurationChanged(state.resultPresentation, state.settings, { ...state.settings, ...updates, mode: nextMode }, state.pools)
+          ? { resultInteraction: structuredClone(defaultResultInteraction) } : {}),
         settings: { ...state.settings, ...updates, mode: nextMode, count: nextCount },
         ui: { ...state.ui, countByMode },
         drawState: changesDrawConfig ? { ...state.drawState, activePresetId: null } : state.drawState,
@@ -223,6 +232,8 @@ export const useAppStore = create<AppStore>((set, get) => ({
   updatePools(updates) {
     set((state) => ({
       pools: { ...state.pools, ...updates },
+      ...(pinConfigurationChanged(state.resultPresentation, state.settings, state.settings, { ...state.pools, ...updates })
+        ? { resultInteraction: structuredClone(defaultResultInteraction) } : {}),
       drawState: { ...state.drawState, activePresetId: null },
       error: "",
       revision: state.revision + 1,
@@ -291,6 +302,19 @@ export const useAppStore = create<AppStore>((set, get) => ({
   clearResultInteraction() {
     set({ resultInteraction: structuredClone(defaultResultInteraction) });
   },
+  syncPresentationPinScope(pinScopeKey, configUpdates) {
+    set((state) => {
+      if (!state.resultPresentation) return {};
+      return {
+        resultPresentation: {
+          ...state.resultPresentation,
+          pinScopeKey,
+          config: configUpdates ? { ...state.resultPresentation.config, ...configUpdates } : state.resultPresentation.config,
+        },
+        revision: state.revision + 1,
+      };
+    });
+  },
   commitTransaction(transaction) {
     set((state) => {
       const samePool = state.drawState.poolFingerprint === transaction.poolFingerprint;
@@ -301,6 +325,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
         history: [transactionEntry(transaction), ...state.history].slice(0, HISTORY_LIMIT),
         stats: applyStatsDelta(state.stats, transaction.statsDelta),
         currentResults: transaction.results,
+        resultPresentation: transactionPresentation(transaction),
         drawState: {
           poolFingerprint: transaction.poolFingerprint,
           usedValues: used,
@@ -354,6 +379,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
   clearHistory() {
     set((state) => ({
       history: [],
+      resultPresentation: null,
       currentResults: [],
       previewResults: [],
       resultInteraction: structuredClone(defaultResultInteraction),
@@ -362,6 +388,18 @@ export const useAppStore = create<AppStore>((set, get) => ({
       revision: state.revision + 1,
     }));
     queuePersistence(true);
+  },
+  updateHistoryNote(id, note) {
+    const trimmed = typeof note === "string" ? note.trim() : "";
+    set((state) => ({
+      history: state.history.map((entry) =>
+        entry.id === id || entry.transactionId === id
+          ? { ...entry, note: trimmed ? trimmed : undefined }
+          : entry
+      ),
+      revision: state.revision + 1,
+    }));
+    queuePersistence();
   },
   resetModeStats(mode) {
     set((state) => ({ stats: resetStats(state.stats, mode), revision: state.revision + 1 }));
@@ -375,6 +413,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
     }
     set((state) => ({
       currentResults: entry.results,
+      resultPresentation: historyPresentation(entry),
       previewResults: [],
       ui: { ...state.ui, activeView: "roll" },
       drawState: { ...state.drawState, lastTransactionId: entry.transactionId || state.drawState.lastTransactionId },
@@ -407,6 +446,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
     const valid = migrateToV5(replacement, "备份恢复");
     set((state) => ({
       ...valid,
+      resultPresentation: null,
       currentResults: [],
       previewResults: [],
       resultInteraction: structuredClone(defaultResultInteraction),
@@ -443,6 +483,7 @@ export async function initializeStore(customAdapter?: PersistenceAdapter): Promi
   useAppStore.setState({
     ...state,
     hydrated: true,
+    resultPresentation: null,
     hydrationSource: loaded.source,
     warnings: loaded.warnings,
     currentResults: [],

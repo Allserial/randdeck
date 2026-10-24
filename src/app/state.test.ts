@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { buildBackup, createDefaultState, migrateToV5, parseBackup } from "./state";
+import { useAppStore } from "./store";
 import { parseRuntimeMessage } from "../domain/runtimeMessage";
 import { detectLocaleFromLanguages, normalizePersistedLocale } from "../i18n/locale";
 
@@ -164,4 +165,98 @@ describe("AppState v5 migration", () => {
     try { parseBackup({ version: 99 }); } catch (caught) { error = caught; }
     expect(parseRuntimeMessage((error as Error).message)?.key).toBe("errors.incompatibleBackup");
   });
+
+  it("defaults sequentialReveal to true and preserves explicit false", () => {
+    const defaultState = createDefaultState();
+    expect(defaultState.settings.appearance.sequentialReveal).toBe(true);
+
+    const migratedWithFalse = migrateToV5(
+      {
+        ...defaultState,
+        settings: {
+          ...defaultState.settings,
+          appearance: { ...defaultState.settings.appearance, sequentialReveal: false },
+        },
+      },
+      "关闭逐个揭示"
+    );
+    expect(migratedWithFalse.settings.appearance.sequentialReveal).toBe(false);
+
+    const migratedWithoutField = migrateToV5(
+      {
+        ...defaultState,
+        settings: {
+          ...defaultState.settings,
+          appearance: { theme: "dark", motion: "ceremony", soundProfile: "minimal", particles: true },
+        },
+      },
+      "旧版本无该字段"
+    );
+    expect(migratedWithoutField.settings.appearance.sequentialReveal).toBe(true);
+  });
+
+  it("normalizes and preserves history entry note, trimming whitespace and dropping empty strings", () => {
+    const defaultState = createDefaultState();
+    const migrated = migrateToV5(
+      {
+        ...defaultState,
+        history: [
+          {
+            id: "h1",
+            mode: "range",
+            config: { mode: "range" },
+            results: [{ value: 4 }],
+            note: "  第 1 轮检定  ",
+          },
+          {
+            id: "h2",
+            mode: "range",
+            config: { mode: "range" },
+            results: [{ value: 7 }],
+            note: "   ",
+          },
+        ],
+      },
+      "历史备注测试"
+    );
+
+    expect(migrated.history[0].note).toBe("第 1 轮检定");
+    expect(migrated.history[1].note).toBeUndefined();
+  });
 });
+
+describe("updateHistoryNote store action", () => {
+  it("updates note matching by entry.id or transactionId and clears empty note", () => {
+    const store = useAppStore.getState();
+    const mockEntry = {
+      id: "test-entry-1",
+      transactionId: "tx-abc-123",
+      createdAt: new Date().toISOString(),
+      mode: "range" as const,
+      config: store.settings,
+      results: [{ value: 42, total: 42, faces: [], tags: [] }],
+      legacy: false,
+    };
+    useAppStore.setState({
+      history: [mockEntry],
+      revision: 1,
+    });
+
+    // 1. 按 entry.id 更新并自动 trim
+    store.updateHistoryNote("test-entry-1", "  检定备注 A  ");
+    expect(useAppStore.getState().history[0].note).toBe("检定备注 A");
+    expect(useAppStore.getState().revision).toBe(2);
+
+    // 2. 按 transactionId 更新
+    store.updateHistoryNote("tx-abc-123", "新备注 B");
+    expect(useAppStore.getState().history[0].note).toBe("新备注 B");
+    expect(useAppStore.getState().revision).toBe(3);
+
+    // 3. 传入全空格或空字符串清理为 undefined
+    store.updateHistoryNote("tx-abc-123", "   ");
+    expect(useAppStore.getState().history[0].note).toBeUndefined();
+    expect(useAppStore.getState().revision).toBe(4);
+  });
+});
+
+

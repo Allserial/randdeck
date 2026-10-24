@@ -1,7 +1,11 @@
-import { lazy, Suspense, useMemo, useRef, useState } from "react";
+import { lazy, Suspense, useMemo, useRef, useState, type CSSProperties } from "react";
 import { useTranslation } from "react-i18next";
 import { Activity, BarChart3, Copy, History, RotateCcw, Search, Trash2 } from "lucide-react";
 import clsx from "clsx";
+import * as Dropdown from "@radix-ui/react-dropdown-menu";
+import { MoreHorizontal } from "lucide-react";
+import { Pager } from "../../components/ui/Pager";
+import { formatProbability } from "./formatProbability";
 import type { DrawMode, ProbabilityReport, ProbabilityRequest } from "../../domain/types";
 import { prepareDraw } from "../../domain/draw";
 import { parseDiceExpression } from "../../domain/dice";
@@ -32,6 +36,7 @@ export default function InsightsView() {
   const deleteHistory = useAppStore((state) => state.deleteHistory);
   const clearHistory = useAppStore((state) => state.clearHistory);
   const resetModeStats = useAppStore((state) => state.resetModeStats);
+  const updateHistoryNote = useAppStore((state) => state.updateHistoryNote);
   const setToast = useAppStore((state) => state.setToast);
   const setError = useAppStore((state) => state.setError);
   const locale = useAppStore((state) => state.ui.locale);
@@ -40,12 +45,20 @@ export default function InsightsView() {
   const [dateFilter, setDateFilter] = useState("all");
   const [search, setSearch] = useState("");
   const [clearOpen, setClearOpen] = useState(false);
+  const [noteEntry, setNoteEntry] = useState<(typeof historyEntries)[0] | null>(null);
+  const [noteText, setNoteText] = useState("");
   const [analysisNow] = useState(() => Date.now());
   const [samples, setSamples] = useState<5_000 | 20_000 | 100_000>(20_000);
+  const [tablePage, setTablePage] = useState(0);
   const [report, setReport] = useState<ProbabilityReport | null>(null);
   const [progress, setProgress] = useState(0);
   const [analyzing, setAnalyzing] = useState(false);
   const controller = useRef<AbortController | null>(null);
+
+  const handleOpenNoteDialog = (entry: (typeof historyEntries)[0]) => {
+    setNoteEntry(entry);
+    setNoteText(entry.note || "");
+  };
 
   const filteredHistory = useMemo(() => {
     const cutoff =
@@ -59,7 +72,9 @@ export default function InsightsView() {
       (entry) =>
         (modeFilter === "all" || entry.mode === modeFilter) &&
         (!cutoff || new Date(entry.createdAt || 0).getTime() >= cutoff) &&
-        (!needle || historySearchText(entry).includes(needle))
+        (!needle ||
+          historySearchText(entry).includes(needle) ||
+          (entry.note || "").toLowerCase().includes(needle))
     );
   }, [analysisNow, dateFilter, historyEntries, modeFilter, search]);
 
@@ -104,6 +119,7 @@ export default function InsightsView() {
     setAnalyzing(true);
     setProgress(0);
     setReport(null);
+    setTablePage(0);
     try {
       const state = snapshotState();
       const plan = prepareDraw(state);
@@ -153,6 +169,7 @@ export default function InsightsView() {
         <div>
           <span className="section-label">{t("insights.title")}</span>
           <h1>{t("insights.heading")}</h1>
+          <p style={{ marginTop: 4, color: "var(--muted)", fontSize: 13 }}>{t("insights.description")}</p>
         </div>
       </header>
 
@@ -207,6 +224,7 @@ export default function InsightsView() {
 
       {tab === "overview" && (
         <>
+          <p className="stats-scope">{t("visual.ledger")} · {modeLabel(currentMode, locale)}</p>
           <div className="metric-grid">
             <article>
               <span>{t("insights.currentDraws")}</span>
@@ -222,7 +240,7 @@ export default function InsightsView() {
             </article>
             <article>
               <span>{t("insights.filteredBatches")}</span>
-              <strong>{filteredHistory.length}</strong>
+              <strong>{formatLocaleNumber(filteredHistory.length, locale)}</strong>
               <small>{values.length} {t("common.units.results")}</small>
             </article>
             <article>
@@ -231,8 +249,9 @@ export default function InsightsView() {
               <small>{coverage.missing.slice(0, 4).join("、") || t("common.status.none")}</small>
             </article>
           </div>
+          <p className="stats-scope">{t("visual.filtered")} · {t("insights.filteredBatches")} {filteredHistory.length} · {values.length} {t("common.units.results")}</p>
           <Suspense fallback={<div className="chart-loading">{t("insights.loadChart")}</div>}>
-            <ChartsPanel frequency={frequency} trend={trend} />
+            <ChartsPanel view="overview" frequency={frequency} trend={trend} />
           </Suspense>
           <Button
             variant="danger"
@@ -293,6 +312,36 @@ export default function InsightsView() {
                 <button type="button" className="history-result" onClick={() => recallHistory(entry.id)}>
                   {entry.results.map((result) => result.total).join(" · ")}
                 </button>
+                <div className="history-note-cell">
+                  {entry.note ? (
+                    <button
+                      type="button"
+                      className="history-note-badge"
+                      title={`${entry.note} (${t("insights.editNote")})`}
+                      onClick={() => handleOpenNoteDialog(entry)}
+                    >
+                      <span>📌 {entry.note}</span>
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      className="history-note-add-btn"
+                      title={t("insights.addNote")}
+                      onClick={() => handleOpenNoteDialog(entry)}
+                    >
+                      + {t("insights.note")}
+                    </button>
+                  )}
+                </div>
+                <Dropdown.Root>
+                  <Dropdown.Trigger asChild><button className="icon-button history-more" aria-label={t("visual.historyActions")}><MoreHorizontal size={18} /></button></Dropdown.Trigger>
+                  <Dropdown.Portal><Dropdown.Content className="dropdown-content" align="end">
+                    <Dropdown.Item className="dropdown-item" onSelect={() => recallHistory(entry.id)}>{t("insights.recall")}</Dropdown.Item>
+                    <Dropdown.Item className="dropdown-item" onSelect={() => toggleCompare(entry.id)}>{t("insights.addCompare")}</Dropdown.Item>
+                    <Dropdown.Item className="dropdown-item" onSelect={() => void copyText(entry.results.map(result => result.total).join(", "))}>{t("insights.copyBatch")}</Dropdown.Item>
+                    <Dropdown.Item className="dropdown-item" onSelect={() => deleteHistory(entry.id)}>{t("insights.deleteBatch")}</Dropdown.Item>
+                  </Dropdown.Content></Dropdown.Portal>
+                </Dropdown.Root>
                 {entry.legacy && <small>{t("insights.compatibleRecord")}</small>}
                 <IconButton label={t("insights.recall")} onClick={() => recallHistory(entry.id)}>
                   <History size={14} />
@@ -362,13 +411,18 @@ export default function InsightsView() {
                 )}
               </div>
                 <Suspense fallback={<div className="chart-loading">{t("insights.probabilityChart")}</div>}>
-                <ChartsPanel frequency={[]} trend={[]} probability={report} />
+                <ChartsPanel view="probability" probability={report} />
               </Suspense>
+              <Pager page={tablePage} size={50} total={report.points.length} onChange={setTablePage} />
               <div className="probability-table">
-                {report.points.slice(0, 200).map((point) => (
-                  <div key={point.value}>
+                <div className="table-labels"><span>{t("visual.value")}</span><span>{t("visual.probability")}</span><span>{t("visual.expected")}</span><span>{t("visual.observed")}</span></div>
+                {report.points.slice(tablePage * 50, (tablePage + 1) * 50).map((point) => (
+                  <div
+                    key={point.value}
+                    style={{ "--prob-pct": `${Math.min(100, Math.max(0, point.probability * 100)).toFixed(2)}%` } as CSSProperties}
+                  >
                     <strong>{point.value}</strong>
-                    <span>{(point.probability * 100).toFixed(3)}%</span>
+                    <span>{formatProbability(point.probability, locale)}</span>
                     <span>{t("insights.expectedPerBatch", { value: point.expectedCount.toFixed(3) })}</span>
                     <span>{t("insights.observed", { value: point.observed ?? 0 })}</span>
                   </div>
@@ -403,6 +457,52 @@ export default function InsightsView() {
         }
       >
         <p>{t("insights.clearHistoryBody")}</p>
+      </Dialog>
+
+      <Dialog
+        open={Boolean(noteEntry)}
+        onOpenChange={(open) => {
+          if (!open) setNoteEntry(null);
+        }}
+        title={noteEntry?.note ? t("insights.editNote") : t("insights.addNote")}
+        footer={
+          <>
+            <Button variant="quiet" onClick={() => setNoteEntry(null)}>
+              {t("common.actions.cancel")}
+            </Button>
+            <Button
+              variant="primary"
+              onClick={() => {
+                if (noteEntry) {
+                  updateHistoryNote(noteEntry.id, noteText);
+                  setNoteEntry(null);
+                }
+              }}
+            >
+              {t("common.actions.save")}
+            </Button>
+          </>
+        }
+      >
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            if (noteEntry) {
+              updateHistoryNote(noteEntry.id, noteText);
+              setNoteEntry(null);
+            }
+          }}
+        >
+          <input
+            type="text"
+            className="ui-input note-input"
+            autoFocus
+            value={noteText}
+            onChange={(e) => setNoteText(e.target.value)}
+            placeholder={t("roll.notePlaceholder")}
+            maxLength={100}
+          />
+        </form>
       </Dialog>
     </div>
   );

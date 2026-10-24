@@ -1,10 +1,11 @@
 import { useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { Contrast, Database, Download, MonitorUp, Sparkles, Upload, Volume2 } from "lucide-react";
+import { Contrast, Database, Download, Layers, MonitorUp, Sparkles, Timer, Upload, Volume2 } from "lucide-react";
 import type { SoundProfile } from "../../domain/types";
 import { buildBackup, parseBackup } from "../../app/state";
 import { snapshotState, useAppStore } from "../../app/store";
 import { openDisplayWindow, setApplicationWindowTitle, setDisplayWindowMode } from "../../platform/desktop";
+import { publishCurrentDisplay } from "../../app/drawController";
 import { saveLocalFile } from "../../platform/files";
 import { playDrawSound } from "../../platform/audio";
 import { Button } from "../../components/ui/Button";
@@ -75,7 +76,6 @@ export default function SettingsView() {
   const setDisplay = async (mode: "normal" | "fullscreen" | "overlay") => {
     try {
       update({ desktop: { ...settings.desktop, displayMode: mode } });
-      await openDisplayWindow(mode);
       await setDisplayWindowMode(mode, mode === "overlay" && settings.desktop.displayClickThrough);
     } catch (error) {
       setError((error as Error).message);
@@ -144,6 +144,58 @@ export default function SettingsView() {
             <small className="setting-hint">
               {translate(`settings.motionDescriptions.${settings.appearance.motion}`)}
             </small>
+            {settings.appearance.motion === "ceremony" && (
+              <div className="ceremony-subpanel">
+                <div className="ceremony-timer-setting" data-testid="ceremony-timer-setting">
+                  <span>
+                    <Timer size={15} />
+                    {t("roll.timerSection")}
+                  </span>
+                  <Segmented
+                    label={t("roll.timerSection")}
+                    value={String(settings.timer.durationSec)}
+                    options={[
+                      { value: "3", label: "3s" },
+                      { value: "5", label: "5s" },
+                      { value: "10", label: "10s" },
+                    ]}
+                    onChange={(value) => update({ timer: { ...settings.timer, durationSec: Number(value) } })}
+                  />
+                </div>
+                <label className="setting-toggle ceremony-toggle">
+                  <input
+                    type="checkbox"
+                    checked={settings.appearance.sequentialReveal !== false}
+                    onChange={(event) =>
+                      update({ appearance: { ...settings.appearance, sequentialReveal: event.target.checked } })
+                    }
+                  />
+                  <span>
+                    <strong>
+                      <Layers size={15} />
+                      {t("settings.sequentialReveal")}
+                    </strong>
+                    <small>{t("settings.sequentialRevealHelp")}</small>
+                  </span>
+                </label>
+                <label className="setting-toggle ceremony-toggle">
+                  <input
+                    type="checkbox"
+                    checked={settings.appearance.particles}
+                    onChange={(event) =>
+                      update({ appearance: { ...settings.appearance, particles: event.target.checked } })
+                    }
+                  />
+                  <span>
+                    <strong>
+                      <Sparkles size={15} />
+                      {t("settings.particles")}
+                    </strong>
+                    <small>{t("settings.particlesHelp")}</small>
+                  </span>
+                </label>
+              </div>
+            )}
           </div>
           <div className="setting-item">
             <span>
@@ -161,20 +213,6 @@ export default function SettingsView() {
               onChange={handleSoundChange}
             />
           </div>
-          <label className="setting-toggle">
-            <input
-              type="checkbox"
-              checked={settings.appearance.particles}
-              onChange={(event) => update({ appearance: { ...settings.appearance, particles: event.target.checked } })}
-            />
-            <span>
-              <strong>
-                <Sparkles size={15} />
-                {t("settings.particles")}
-              </strong>
-              <small>{t("settings.particlesHelp")}</small>
-            </span>
-          </label>
         </div>
       </section>
 
@@ -193,6 +231,10 @@ export default function SettingsView() {
             <span>{t("settings.displayModeHelp")}</span>
           </div>
           <div className="display-modes">
+            <Button icon={<MonitorUp size={16} />} onClick={async () => {
+              try { await openDisplayWindow(settings.desktop.displayMode); await publishCurrentDisplay(); }
+              catch (error) { setError((error as Error).message); }
+            }}>{t("roll.display")}</Button>
             <button
               type="button"
               className={settings.desktop.displayMode === "normal" ? "active" : ""}

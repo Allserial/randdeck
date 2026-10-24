@@ -1,5 +1,5 @@
-﻿param(
-  [string]$Version = "0.6.0",
+param(
+  [string]$Version = "0.7.0",
   [string]$InstallerPath = "",
   [string]$PreviousInstallerPath = ""
 )
@@ -198,7 +198,7 @@ try {
   $oldNewShortcuts = @($newShortcuts | Where-Object { [System.IO.Path]::GetFileNameWithoutExtension($_) -match "^(掷数台|zhishutai)$" })
 
   $installedExe = Get-Item -LiteralPath (Join-Path $installDir "RandDeck.exe") -ErrorAction SilentlyContinue
-  if (!$installedExe) { throw "v0.6.0 升级后未找到 RandDeck.exe" }
+  if (!$installedExe) { throw "v0.7.0 升级后未找到 RandDeck.exe" }
   $report.installedExecutable = $installedExe.Name
   $report.oldExecutableRemoved = !(Test-Path -LiteralPath (Join-Path $installDir "zhishutai.exe"))
   $report.singleUninstallEntry = $entriesAfterUpgrade.Count -eq 1

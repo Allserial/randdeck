@@ -25,8 +25,8 @@ Chinese name: **掷数台**. 中文说明：[README.zh-CN.md](README.zh-CN.md).
 Get it from [GitHub Releases](https://github.com/Allserial/randdeck/releases):
 
 - `RandDeck.exe`: one file. Microsoft Edge WebView2 Runtime must already be installed.
-- `RandDeck-v0.6.0-portable.zip`: unzip and run. Includes docs, license, a manifest, and SHA256 checksums.
-- `RandDeck-v0.6.0-offline-setup.exe`: installer. Can install WebView2 if the PC does not have it.
+- `RandDeck-v0.7.0-portable.zip`: unzip and run. Includes docs, license, a manifest, and SHA256 checksums.
+- `RandDeck-v0.7.0-offline-setup.exe`: installer. Can install WebView2 if the PC does not have it.
 
 This release is not code-signed. Windows SmartScreen may warn about an unknown publisher. Check the published SHA256 before you run a file.
 

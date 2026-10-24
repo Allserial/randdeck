@@ -1,11 +1,47 @@
-import { useEffect, useState, forwardRef } from "react";
+import { useEffect, useState, forwardRef, type CSSProperties } from "react";
 import { useTranslation } from "react-i18next";
 import clsx from "clsx";
+import { Check, Pin, Copy } from "lucide-react";
+import { ResultNumber } from "../../components/ui/ResultNumber";
 import { formatRollTrace } from "../../domain/dice";
 import { prepareDraw } from "../../domain/draw";
 import type { DiceFace, DrawMode, DrawResult } from "../../domain/types";
 import { displayValue } from "../../lib/labels";
 import { useAppStore } from "../../app/store";
+
+export function StageAstrolabe() {
+  return (
+    <div className="stage-astrolabe" aria-hidden="true">
+      <span className="astrolabe-corner astrolabe-corner--tl" />
+      <span className="astrolabe-corner astrolabe-corner--tr" />
+      <span className="astrolabe-corner astrolabe-corner--bl" />
+      <span className="astrolabe-corner astrolabe-corner--br" />
+      <svg className="astrolabe-dial" viewBox="0 0 600 600" fill="none">
+        <line x1="24" y1="300" x2="576" y2="300" className="astrolabe-axis" />
+        <line x1="300" y1="24" x2="300" y2="576" className="astrolabe-axis" />
+        <line x1="105" y1="105" x2="495" y2="495" className="astrolabe-axis-diag" />
+        <line x1="495" y1="105" x2="105" y2="495" className="astrolabe-axis-diag" />
+        <g className="astrolabe-ring-outer">
+          <circle cx="300" cy="300" r="264" className="astrolabe-stroke-main" />
+          <circle cx="300" cy="300" r="252" className="astrolabe-stroke-ticks" />
+          <circle cx="300" cy="300" r="238" className="astrolabe-stroke-faint" />
+          <polygon points="300,28 305,42 300,48 295,42" className="astrolabe-compass-pip" />
+          <polygon points="300,572 305,558 300,552 295,558" className="astrolabe-compass-pip" />
+          <polygon points="572,300 558,305 552,300 558,295" className="astrolabe-compass-pip" />
+          <polygon points="28,300 42,305 48,300 42,295" className="astrolabe-compass-pip" />
+        </g>
+        <g className="astrolabe-ring-mid">
+          <circle cx="300" cy="300" r="198" className="astrolabe-stroke-dashed" />
+          <rect x="160" y="160" width="280" height="280" rx="3" className="astrolabe-octagram" />
+          <rect x="160" y="160" width="280" height="280" rx="3" transform="rotate(45 300 300)" className="astrolabe-octagram" />
+          <circle cx="300" cy="300" r="146" className="astrolabe-stroke-main" />
+        </g>
+        <circle cx="300" cy="300" r="96" className="astrolabe-stroke-ticks" />
+        <circle cx="300" cy="300" r="54" className="astrolabe-stroke-faint" />
+      </svg>
+    </div>
+  );
+}
 
 export function DieFace({ face, compact = false }: { face: DiceFace; compact?: boolean }) {
   const sides = face.sides || 6;
@@ -30,6 +66,7 @@ export function DieFace({ face, compact = false }: { face: DiceFace; compact?: b
         {sides === 12 && <polygon points="32,4 56,16 60,40 44,60 20,60 4,40 8,16" />}
         {sides === 20 && <polygon points="32,3 58,18 58,46 32,61 6,46 6,18" />}
         {![4, 6, 8, 10, 12, 20].includes(sides) && <rect x="8" y="8" width="48" height="48" rx="10" />}
+        <circle className="die-facet-ring" cx="32" cy={sides === 4 ? 38 : 32} r={sides === 4 ? 11 : 16} />
       </svg>
       <strong>{label}</strong>
     </span>
@@ -123,11 +160,20 @@ export const NumberCard = forwardRef<
 
   const modeBadge = translate(`roll.cardMode.${mode}`);
 
+  const handleCardClick = (e: React.MouseEvent) => {
+    if (isRolling || hidden || !onSelect) return;
+    if ((e.target as HTMLElement).closest(".tile-copy")) return;
+    onSelect();
+  };
+
   return (
     <article
+      style={{ "--card-index": Math.min(cardIndex, 11) } as CSSProperties}
       ref={ref}
+      onClick={handleCardClick}
       className={clsx(
         "result-tile",
+        String(displayValue(result)).length > 12 && "has-long-value",
         `result-tile--${mode}`,
         selected && "selected",
         pinned && "pinned",
@@ -138,14 +184,25 @@ export const NumberCard = forwardRef<
       )}
     >
       <div className="tile-copper-rim" aria-hidden="true" />
+      <span className="tile-filigree" aria-hidden="true" />
+      <div className="tile-head" aria-hidden="true">
+        <span className="tile-index">
+          NO.{String(cardIndex + 1).padStart(2, "0")}
+        </span>
+        {(selected || pinned) && (
+          <div className="tile-state">
+            {selected && <span className="tile-badge tile-badge--selected"><Check size={12} strokeWidth={2.5} /></span>}
+            {pinned && <span className="tile-badge tile-badge--pinned"><Pin size={12} strokeWidth={2.5} /></span>}
+          </div>
+        )}
+      </div>
       <button
         type="button"
         className="result-value"
         aria-pressed={selected}
-        onClick={onSelect}
-        tabIndex={isRolling || hidden ? -1 : 0}
+        tabIndex={isRolling || hidden || !onSelect ? -1 : 0}
       >
-        <span className={clsx(isRolling && "rolling-glow")}>{shownValue}</span>
+        <ResultNumber value={shownValue} className={clsx(isRolling && "rolling-glow")} />
       </button>
 
       {mode === "expression" && faces.length > 0 && !hidden && !isRolling && (
@@ -157,7 +214,9 @@ export const NumberCard = forwardRef<
       )}
 
       {mode === "expression" && Boolean(result.trace) && !hidden && !isRolling && (
-        <p className="tile-trace">{t("roll.trace")} {formatRollTrace(result.trace as never)}</p>
+        <p className="tile-trace" title={`${t("roll.trace")} ${formatRollTrace(result.trace as never)}`}>
+          <span className="sr-only">{t("roll.trace")}</span><code>{formatRollTrace(result.trace as never)}</code>
+        </p>
       )}
 
       {/* 标签锁定固定单行高度，不撑大卡片外框 */}
@@ -181,7 +240,7 @@ export const NumberCard = forwardRef<
               onCopy();
             }}
           >
-            {t("common.actions.copy")}
+            <Copy size={16} aria-hidden="true" />
           </button>
         ) : (
           <span className="tile-copy-placeholder" aria-hidden="true" />
@@ -220,7 +279,7 @@ export function ResultBoard({
   onSelect?: (index: number) => void;
   onCopy?: (result: DrawResult) => void;
 }) {
-  const renderCount = isCeremony ? Math.max(1, count) : isRolling ? count : results.length;
+  const renderCount = isCeremony ? Math.max(1, count) : isRolling && !rollingIndices ? count : results.length;
 
   let colsClass: string;
   let density: string;

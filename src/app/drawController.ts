@@ -1,14 +1,17 @@
 import { createReceipt } from "../domain/audit";
 import { executeDraw, prepareDraw, prepareShuffle } from "../domain/draw";
 import { WebCryptoRandomSource } from "../domain/random";
+import type { DrawTransaction, SoundProfile } from "../domain/types";
 import { playCountdownTick, playDrawSound, startCountdownDrums, stopCountdownDrums } from "../platform/audio";
 import { publishDisplayState } from "../platform/desktop";
 import { modeLabel } from "../lib/labels";
 import { snapshotState, useAppStore } from "./store";
+import { getPinScopeKey, transactionPresentation } from "./resultPresentation";
 import i18n from "i18next";
 import { messageFromUnknown, runtimeError } from "../domain/runtimeMessage";
 
 let activeGeneration: Promise<string | null> | null = null;
+let activeCountdown: Promise<void> | null = null;
 let ceremonyCountdownTimer: number | undefined;
 let ceremonyRevealTimer: number | undefined;
 
@@ -17,6 +20,7 @@ interface PartialDrawContext {
   sourceTransactionId: string;
   resultTemplate: Array<ReturnType<typeof snapshotState>["history"][number]["results"][number] | null>;
   retainedPinnedIndices: number[];
+  retainedSelectedIndices?: number[];
 }
 
 export function effectiveMotion(): "instant" | "standard" | "ceremony" {
@@ -49,9 +53,10 @@ export async function publishCurrentDisplay(overrides: { hidden?: boolean } = {}
   }
 
   await publishDisplayState({
+    context: ceremony.targetTransaction ? transactionPresentation(ceremony.targetTransaction) : state.resultPresentation,
     results,
-    mode: modeLabel(state.settings.mode, state.ui.locale),
-    modeKey: state.settings.mode,
+    mode: modeLabel(ceremony.targetTransaction?.mode ?? state.resultPresentation?.mode ?? state.settings.mode, state.ui.locale),
+    modeKey: ceremony.targetTransaction?.mode ?? state.resultPresentation?.mode ?? state.settings.mode,
     locale: state.ui.locale,
     summary,
     theme: state.settings.appearance.theme,
@@ -71,6 +76,54 @@ export async function publishCurrentDisplay(overrides: { hidden?: boolean } = {}
   });
 }
 
+function startCeremonyReveal(
+  transaction: DrawTransaction,
+  soundProfile: SoundProfile,
+  muted: boolean
+): void {
+  const store = useAppStore.getState();
+  const total = transaction.results.length;
+
+  const finishReveal = () => {
+    ceremonyRevealTimer = undefined;
+    useAppStore.getState().commitTransaction(transaction);
+    useAppStore.getState().setCeremony({
+      phase: "finished",
+      remainingSeconds: 0,
+      revealedCount: total,
+      targetTransaction: transaction,
+    });
+    void publishCurrentDisplay();
+  };
+
+  let revealed = 1;
+  store.setCeremony({
+    phase: "revealing",
+    remainingSeconds: 0,
+    revealedCount: 1,
+    targetTransaction: transaction,
+  });
+  void playDrawSound(soundProfile, muted, "lock");
+  void publishCurrentDisplay();
+
+  if (total <= 1) {
+    ceremonyRevealTimer = window.setTimeout(finishReveal, 450);
+    return;
+  }
+
+  ceremonyRevealTimer = window.setInterval(() => {
+    revealed += 1;
+    useAppStore.getState().setCeremony({ revealedCount: revealed });
+    void playDrawSound(soundProfile, muted, "lock");
+    void publishCurrentDisplay();
+
+    if (revealed >= total) {
+      window.clearInterval(ceremonyRevealTimer);
+      finishReveal();
+    }
+  }, 450);
+}
+
 function runGeneration(countOverride?: number, partial?: PartialDrawContext, shuffle = false): Promise<string | null> {
   if (activeGeneration) return activeGeneration;
   activeGeneration = (async () => {
@@ -79,6 +132,7 @@ function runGeneration(countOverride?: number, partial?: PartialDrawContext, shu
     store.setError("");
     try {
       const snapshot = snapshotState();
+      const originalSettings = structuredClone(snapshot.settings);
       if (countOverride) snapshot.settings = { ...snapshot.settings, count: countOverride };
       if (partial && snapshot.settings.mode === "expression") {
         snapshot.settings = { ...snapshot.settings, expression: { ...snapshot.settings.expression, evaluation: "batch" } };
@@ -99,7 +153,18 @@ function runGeneration(countOverride?: number, partial?: PartialDrawContext, shu
         if (replacements.length !== partial.generatedIndices.length) throw runtimeError("errors.rerollMismatch");
         let replacementIndex = 0;
         transaction.results = partial.resultTemplate.map((result) => result ?? replacements[replacementIndex++]);
-        transaction.configSnapshot = { ...transaction.configSnapshot, count: partial.resultTemplate.length };
+        transaction.configSnapshot = {
+          ...transaction.configSnapshot,
+          count: partial.resultTemplate.length,
+          ...(originalSettings.mode === "expression"
+            ? {
+                expression: {
+                  ...transaction.configSnapshot.expression,
+                  evaluation: originalSettings.expression.evaluation,
+                },
+              }
+            : {}),
+        };
         transaction.operation = {
           kind: "reroll",
           sourceTransactionId: partial.sourceTransactionId,
@@ -109,7 +174,8 @@ function runGeneration(countOverride?: number, partial?: PartialDrawContext, shu
       transaction.receipt = await createReceipt(transaction);
 
       const motion = effectiveMotion();
-      const duration = motion === "instant" ? 0 : motion === "standard" ? 620 : 1180;
+      const isCeremonyMode = motion === "ceremony" && !partial && !shuffle;
+      const duration = motion === "instant" ? 0 : isCeremonyMode ? 480 : motion === "standard" ? 620 : 1180;
 
       if (duration > 0) {
         store.setResultInteraction(
@@ -131,12 +197,39 @@ function runGeneration(countOverride?: number, partial?: PartialDrawContext, shu
         await new Promise((resolve) => window.setTimeout(resolve, duration));
       }
 
+      if (isCeremonyMode) {
+        cancelCeremony();
+        const sequential = snapshot.settings.appearance.sequentialReveal !== false;
+        const total = transaction.results.length;
+        const current = useAppStore.getState();
+        current.setDrawing(false);
+        current.setPreviewResults([]);
+        current.setResultInteraction({ rollingIndices: null });
+
+        if (sequential && total > 1) {
+          startCeremonyReveal(transaction, snapshot.settings.appearance.soundProfile, snapshot.settings.muted);
+          return transaction.id;
+        }
+
+        current.commitTransaction(transaction);
+        current.clearResultInteraction();
+        current.setCeremony({
+          phase: "finished",
+          remainingSeconds: 0,
+          revealedCount: total,
+          targetTransaction: transaction,
+        });
+        void playDrawSound(snapshot.settings.appearance.soundProfile, snapshot.settings.muted, "lock");
+        await publishCurrentDisplay();
+        return transaction.id;
+      }
+
       const current = useAppStore.getState();
       current.commitTransaction(transaction);
       if (partial) {
         current.setResultInteraction({
           transactionId: transaction.id,
-          selectedIndices: [],
+          selectedIndices: partial.retainedSelectedIndices ?? [],
           pinnedIndices: partial.retainedPinnedIndices,
           rollingIndices: null,
         });
@@ -163,7 +256,8 @@ function runGeneration(countOverride?: number, partial?: PartialDrawContext, shu
 export function generateDraw(countOverride?: number): Promise<string | null> {
   const state = useAppStore.getState();
   const interaction = state.resultInteraction;
-  const pinsAreCurrent = interaction.transactionId === state.drawState.lastTransactionId && state.currentResults.length > 0;
+  const pinsAreCurrent = interaction.transactionId === state.drawState.lastTransactionId && state.currentResults.length > 0
+    && state.resultPresentation?.pinScopeKey != null && state.resultPresentation.pinScopeKey === getPinScopeKey(state.settings, state.pools);
   const pinnedSourceIndices = pinsAreCurrent
     ? [...new Set(interaction.pinnedIndices)].filter((index) => index >= 0 && index < state.currentResults.length).sort((a, b) => a - b)
     : [];
@@ -213,6 +307,7 @@ export function generateShuffle(): Promise<string | null> {
 
 export function rerollDraw(indices: number[]): Promise<string | null> {
   const state = useAppStore.getState();
+  if (state.resultPresentation?.pinScopeKey == null || state.resultPresentation.pinScopeKey !== getPinScopeKey(state.settings, state.pools)) return Promise.resolve(null);
   const unique = [...new Set(indices)]
     .filter((index) => Number.isInteger(index) && index >= 0 && index < state.currentResults.length)
     .sort((left, right) => left - right);
@@ -229,115 +324,90 @@ export function rerollDraw(indices: number[]): Promise<string | null> {
     sourceTransactionId: state.drawState.lastTransactionId,
     resultTemplate: state.currentResults.map((result, index) => (selected.has(index) ? null : structuredClone(result))),
     retainedPinnedIndices: [...pinned].filter((index) => !selected.has(index)),
+    retainedSelectedIndices: unique,
   });
 }
 
 // 倒计时后生成仪式系统（Item 3, 7）
 export async function startCountdownCeremony(seconds: number): Promise<void> {
   const store = useAppStore.getState();
-  if (store.isDrawing || store.ceremony.phase !== "idle") return;
-  cancelCeremony();
+  if (activeCountdown || activeGeneration || store.isDrawing || store.ceremony.phase !== "idle") return;
 
-  const snapshot = snapshotState();
-  let transaction;
-  try {
-    const plan = prepareDraw(snapshot);
-    transaction = executeDraw(plan, new WebCryptoRandomSource(), null);
-    transaction.receipt = await createReceipt(transaction);
-  } catch (error) {
-    store.setError(messageFromUnknown(error, "errors.drawFailed"));
-    return;
-  }
+  activeCountdown = (async () => {
+    cancelCeremony();
 
-  // 1. 设置倒计时阶段，启动低音节奏床鼓点与整秒 tick
-  store.setCeremony({
-    phase: "countdown",
-    remainingSeconds: seconds,
-    revealedCount: 0,
-    targetTransaction: transaction,
-  });
-  void startCountdownDrums(snapshot.settings.muted);
-  void playCountdownTick(snapshot.settings.muted);
-  void publishCurrentDisplay();
-
-  const motion = effectiveMotion();
-  const instant = motion === "instant";
-
-  // 倒计时每秒触发
-  let currentSec = seconds;
-  ceremonyCountdownTimer = window.setInterval(() => {
-    currentSec -= 1;
-    if (currentSec > 0) {
-      useAppStore.getState().setCeremony({ remainingSeconds: currentSec });
-      void playCountdownTick(useAppStore.getState().settings.muted);
-      void publishCurrentDisplay();
+    const snapshot = snapshotState();
+    let transaction;
+    try {
+      const plan = prepareDraw(snapshot);
+      transaction = executeDraw(plan, new WebCryptoRandomSource(), null);
+      transaction.receipt = await createReceipt(transaction);
+    } catch (error) {
+      store.setError(messageFromUnknown(error, "errors.drawFailed"));
       return;
     }
 
-    // 倒计时结束，停止鼓点
-    window.clearInterval(ceremonyCountdownTimer);
-    ceremonyCountdownTimer = undefined;
-    stopCountdownDrums();
+    // 在 createReceipt 异步微任务完成后二次校验
+    if (!activeCountdown || useAppStore.getState().ceremony.phase !== "idle") return;
 
-    if (instant) {
-      // 即时/减少动态模式：倒计时结束后一次性揭晓
-      useAppStore.getState().commitTransaction(transaction);
-      useAppStore.getState().setCeremony({
-        phase: "finished",
-        remainingSeconds: 0,
-        revealedCount: transaction.results.length,
-        targetTransaction: transaction,
-      });
-      void playDrawSound(snapshot.settings.appearance.soundProfile, snapshot.settings.muted, "lock");
-      void publishCurrentDisplay();
-      return;
-    }
-
-    // 2. 转入揭晓阶段：立刻揭晓第 1 张（单张也走此路径，礼花从该卡中心炸）
-    const total = transaction.results.length;
-    const finishReveal = () => {
-      ceremonyRevealTimer = undefined;
-      useAppStore.getState().commitTransaction(transaction);
-      useAppStore.getState().setCeremony({
-        phase: "finished",
-        remainingSeconds: 0,
-        revealedCount: total,
-        targetTransaction: transaction,
-      });
-      void publishCurrentDisplay();
-    };
-
-    let revealed = 1;
-    useAppStore.getState().setCeremony({
-      phase: "revealing",
-      remainingSeconds: 0,
-      revealedCount: 1,
+    // 1. 设置倒计时阶段，启动低音节奏床鼓点与整秒 tick
+    store.setCeremony({
+      phase: "countdown",
+      remainingSeconds: seconds,
+      revealedCount: 0,
       targetTransaction: transaction,
     });
-    void playDrawSound(snapshot.settings.appearance.soundProfile, snapshot.settings.muted, "lock");
+    void startCountdownDrums(snapshot.settings.muted);
+    void playCountdownTick(snapshot.settings.muted);
     void publishCurrentDisplay();
 
-    if (total <= 1) {
-      ceremonyRevealTimer = window.setTimeout(finishReveal, 800);
-      return;
-    }
+    const motion = effectiveMotion();
+    const instant = motion === "instant";
 
-    ceremonyRevealTimer = window.setInterval(() => {
-      revealed += 1;
-      useAppStore.getState().setCeremony({ revealedCount: revealed });
-      void playDrawSound(snapshot.settings.appearance.soundProfile, snapshot.settings.muted, "lock");
-      void publishCurrentDisplay();
-
-      if (revealed >= total) {
-        window.clearInterval(ceremonyRevealTimer);
-        finishReveal();
+    // 倒计时每秒触发
+    let currentSec = seconds;
+    ceremonyCountdownTimer = window.setInterval(() => {
+      currentSec -= 1;
+      if (currentSec > 0) {
+        useAppStore.getState().setCeremony({ remainingSeconds: currentSec });
+        void playCountdownTick(useAppStore.getState().settings.muted);
+        void publishCurrentDisplay();
+        return;
       }
+
+      // 倒计时结束，停止鼓点
+      window.clearInterval(ceremonyCountdownTimer);
+      ceremonyCountdownTimer = undefined;
+      stopCountdownDrums();
+
+      const sequential = snapshot.settings.appearance.sequentialReveal !== false;
+
+      if (instant || !sequential) {
+        // 即时/减少动态模式或关闭逐个揭示：倒计时结束后一次性揭晓
+        useAppStore.getState().commitTransaction(transaction);
+        useAppStore.getState().setCeremony({
+          phase: "finished",
+          remainingSeconds: 0,
+          revealedCount: transaction.results.length,
+          targetTransaction: transaction,
+        });
+        void playDrawSound(snapshot.settings.appearance.soundProfile, snapshot.settings.muted, "lock");
+        void publishCurrentDisplay();
+        return;
+      }
+
+      startCeremonyReveal(transaction, snapshot.settings.appearance.soundProfile, snapshot.settings.muted);
     }, 1000);
-  }, 1000);
+  })().finally(() => {
+    activeCountdown = null;
+  });
+
+  return activeCountdown;
 }
 
 // Esc 中断或离开：终止仪式，停止音效，不留答案、不写历史
 export function cancelCeremony(): void {
+  activeCountdown = null;
   window.clearInterval(ceremonyCountdownTimer);
   window.clearInterval(ceremonyRevealTimer);
   window.clearTimeout(ceremonyRevealTimer);

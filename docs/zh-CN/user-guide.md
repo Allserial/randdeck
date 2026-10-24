@@ -2,7 +2,7 @@
 
 ## 安装与启动
 
-已有 WebView2 Runtime 时，可以直接使用 `RandDeck.exe` 便携版。目标电脑可能没有 WebView2 时，使用内置离线运行时的 `RandDeck-v0.6.0-offline-setup.exe`。多文件 ZIP 解压完整后再启动。
+已有 WebView2 Runtime 时，可以直接使用 `RandDeck.exe` 便携版。目标电脑可能没有 WebView2 时，使用内置离线运行时的 `RandDeck-v0.7.0-offline-setup.exe`。多文件 ZIP 解压完整后再启动。
 
 运行下载的文件前，请将其 SHA256 与 GitHub Release 页面比较。当前版本未进行代码签名，Windows SmartScreen 可能显示“未知发布者”。
 

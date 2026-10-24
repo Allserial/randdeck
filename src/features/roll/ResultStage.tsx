@@ -5,9 +5,11 @@ import clsx from "clsx";
 import { displayValue, formatResultList } from "../../lib/labels";
 import { copyText } from "../../platform/files";
 import { useAppStore } from "../../app/store";
+import { getPinScopeKey } from "../../app/resultPresentation";
 import { cancelCeremony, finishCeremonyToNormal, rerollDraw, skipCeremonyReveal } from "../../app/drawController";
 import { Button, IconButton } from "../../components/ui/Button";
-import { ResultBoard } from "./ResultVisual";
+import { Dialog } from "../../components/ui/Dialog";
+import { ResultBoard, StageAstrolabe } from "./ResultVisual";
 import { BurstParticles, type BurstOrigin } from "../fx/BurstParticles";
 
 const EMPTY_INDEX_SET = new Set<number>();
@@ -15,12 +17,15 @@ const DEFAULT_CEREMONY = { phase: "idle" as const, remainingSeconds: 0, revealed
 
 export default function ResultStage() {
   const { t } = useTranslation();
-  const mode = useAppStore((state) => state.settings.mode);
+  const presentation = useAppStore((state) => state.resultPresentation);
+  const pools = useAppStore((state) => state.pools);
   const settings = useAppStore((state) => state.settings);
   const results = useAppStore((state) => state.currentResults);
   const isDrawing = useAppStore((state) => state.isDrawing);
   const rawCeremony = useAppStore((state) => state.ceremony);
   const ceremony = rawCeremony || DEFAULT_CEREMONY;
+  const mode = ceremony.targetTransaction?.mode ?? (isDrawing ? settings.mode : presentation?.mode) ?? settings.mode;
+  const compatible = presentation?.pinScopeKey != null && presentation.pinScopeKey === getPinScopeKey(settings, pools);
   const history = useAppStore((state) => state.history);
   const transactionId = useAppStore((state) => state.drawState.lastTransactionId);
   const resultInteraction = useAppStore((state) => state.resultInteraction);
@@ -31,15 +36,26 @@ export default function ResultStage() {
   const revertTransaction = useAppStore((state) => state.revertTransaction);
   const setResultInteraction = useAppStore((state) => state.setResultInteraction);
   const clearResultInteraction = useAppStore((state) => state.clearResultInteraction);
+  const syncPresentationPinScope = useAppStore((state) => state.syncPresentationPinScope);
+  const updateHistoryNote = useAppStore((state) => state.updateHistoryNote);
 
   const [sort, setSort] = useState<"original" | "asc" | "desc">("original");
+  const [noteDialogOpen, setNoteDialogOpen] = useState(false);
+  const [noteText, setNoteText] = useState("");
 
   const stageContentRef = useRef<HTMLDivElement>(null);
   const cardRefs = useRef<(HTMLElement | null)[]>([]);
   const [singleBurstOrigin, setSingleBurstOrigin] = useState<BurstOrigin | null>(null);
   const [burstToken, setBurstToken] = useState("");
 
-  const interactionIsCurrent = resultInteraction.transactionId === transactionId;
+  const handleOpenNoteDialog = () => {
+    if (latest) {
+      setNoteText(latest.note || "");
+      setNoteDialogOpen(true);
+    }
+  };
+
+  const interactionIsCurrent = compatible && resultInteraction.transactionId === transactionId;
   const selected = useMemo(
     () => (interactionIsCurrent ? new Set(resultInteraction.selectedIndices) : EMPTY_INDEX_SET),
     [interactionIsCurrent, resultInteraction.selectedIndices]
@@ -113,7 +129,12 @@ export default function ResultStage() {
   const addExclusions = () => {
     const values = [...selected].map((index) => results[index]?.value).filter((value): value is number => Number.isFinite(value));
     if (!values.length) return;
-    updateSettings({ excludeInput: [settings.excludeInput.trim(), values.join(",")].filter(Boolean).join(",") });
+    const nextExcludeInput = [settings.excludeInput.trim(), values.join(",")].filter(Boolean).join(",");
+    const nextSettings = { ...settings, excludeInput: nextExcludeInput };
+    const nextKey = getPinScopeKey(nextSettings, pools);
+
+    updateSettings({ excludeInput: nextExcludeInput });
+    syncPresentationPinScope(nextKey, { excludeInput: nextExcludeInput });
     setResultInteraction({ transactionId, selectedIndices: [] });
     setToast(t("roll.addSelectedExclude") + ` (${values.length})`);
   };
@@ -161,6 +182,12 @@ export default function ResultStage() {
         <div>
           <span className="section-label">{t("roll.stage")}</span>
           <h2 id="result-stage-title">{stageTitle}</h2>
+          {results.length > 0 && !isDrawing && !isCeremonyActive && (
+            <p className="result-source">{t("visual.resultSource", { mode: t(`modes.${mode}`) })}
+              {presentation?.config.mode === "range" ? ` · ${presentation.config.min}–${presentation.config.max}` : presentation?.config.mode === "expression" ? ` · ${presentation.config.expression.source}` : ""}
+              {!compatible && <span> · {t(presentation?.historical ? "visual.historyPlayback" : "visual.previousConfiguration")}</span>}
+            </p>
+          )}
         </div>
         {!isCeremonyActive && results.length > 0 && !isDrawing && (
           <div className="stage-actions">
@@ -191,6 +218,7 @@ export default function ResultStage() {
       </div>
 
       <div className="stage-content" ref={stageContentRef}>
+        <StageAstrolabe />
         {/* 单张卡片局部礼花 (仅在 origin 就绪时触发，严禁正中误炸) */}
         <BurstParticles
           active={
@@ -256,7 +284,7 @@ export default function ResultStage() {
                 : new Set(sorted.filter((item) => rollingIndices.includes(item.originalIndex)).map((item) => sorted.indexOf(item)))
             }
             cardRefs={cardRefs}
-            onSelect={(index) => !isDrawing && !isCeremonyActive && toggleSelection(sorted[index].originalIndex)}
+            onSelect={compatible && !isDrawing && !isCeremonyActive ? (index) => toggleSelection(sorted[index].originalIndex) : undefined}
             onCopy={(result) => void copy(String(displayValue(result)), t("roll.copiedResult", { value: displayValue(result) }))}
           />
         )}
@@ -304,12 +332,24 @@ export default function ResultStage() {
         >
           {results.length > 0 ? (
             <>
-              <span>
-                {selected.size
-                  ? pinned.size ? t("roll.selectedPinned", { selected: selected.size, pinned: pinned.size }) : t("roll.selected", { count: selected.size })
-                  : pinned.size
-                    ? t("roll.pinned", { count: pinned.size })
-                    : t("roll.selectHint")}
+              <span className="stage-selection-info">
+                <span>
+                  {selected.size
+                    ? pinned.size ? t("roll.selectedPinned", { selected: selected.size, pinned: pinned.size }) : t("roll.selected", { count: selected.size })
+                    : pinned.size
+                      ? t("roll.pinned", { count: pinned.size })
+                      : t("roll.selectHint")}
+                </span>
+                {latest && (
+                  <button
+                    type="button"
+                    className={clsx("stage-note-btn", latest.note && "has-note")}
+                    title={latest.note ? `${latest.note} (${t("roll.editNote")})` : t("roll.addNote")}
+                    onClick={handleOpenNoteDialog}
+                  >
+                    {latest.note ? `📌 ${latest.note}` : `+ ${t("roll.note")}`}
+                  </button>
+                )}
               </span>
               <button type="button" disabled={!rerollIndices.length} onClick={() => void reroll()}>
                 <RefreshCw size={14} />
@@ -332,6 +372,50 @@ export default function ResultStage() {
           )}
         </div>
       )}
+
+      <Dialog
+        open={noteDialogOpen}
+        onOpenChange={setNoteDialogOpen}
+        title={latest?.note ? t("roll.editNote") : t("roll.addNote")}
+        footer={
+          <>
+            <Button variant="quiet" onClick={() => setNoteDialogOpen(false)}>
+              {t("common.actions.cancel")}
+            </Button>
+            <Button
+              variant="primary"
+              onClick={() => {
+                if (latest) {
+                  updateHistoryNote(latest.id, noteText);
+                  setNoteDialogOpen(false);
+                }
+              }}
+            >
+              {t("common.actions.save")}
+            </Button>
+          </>
+        }
+      >
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            if (latest) {
+              updateHistoryNote(latest.id, noteText);
+              setNoteDialogOpen(false);
+            }
+          }}
+        >
+          <input
+            type="text"
+            className="ui-input note-input"
+            autoFocus
+            value={noteText}
+            onChange={(e) => setNoteText(e.target.value)}
+            placeholder={t("roll.notePlaceholder")}
+            maxLength={100}
+          />
+        </form>
+      </Dialog>
     </section>
   );
 }

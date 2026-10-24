@@ -7,6 +7,15 @@ import { normalizeWeightedEntries } from "../domain/weighted";
 import { detectLocaleFromLanguages, normalizePersistedLocale } from "../i18n/locale";
 import { createRuntimeMessage, runtimeError } from "../domain/runtimeMessage";
 
+declare module "../domain/types" {
+  interface AppearanceSettings {
+    sequentialReveal?: boolean;
+  }
+  interface HistoryEntry {
+    note?: string;
+  }
+}
+
 export const STATE_VERSION = 5 as const;
 export const STORAGE_KEY_V5 = "zhishutai.state.v5";
 export const STORAGE_KEY_V4 = "zhishutai.state.v4";
@@ -41,7 +50,7 @@ export const DEFAULT_SETTINGS: DrawSettings = {
   muted: false,
   tagFilter: { selectedTags: [], combine: "any" },
   expression: { source: "2d6", evaluation: "batch", tagBehavior: "classify" },
-  appearance: { theme: "dark", motion: "standard", soundProfile: "minimal", particles: true },
+  appearance: { theme: "dark", motion: "standard", soundProfile: "minimal", particles: true, sequentialReveal: true },
   desktop: {
     displayMode: "normal",
     displayClickThrough: false,
@@ -52,7 +61,7 @@ export const DEFAULT_SETTINGS: DrawSettings = {
 export const DEFAULT_POOLS: PoolsState = { customEntries: [], weightedEntries: [], rangeTagRules: [], expressionTagRules: [] };
 
 function detectFreshStateLocale(): AppLocale {
-  if (typeof navigator === "undefined") return "en-US";
+  if (typeof navigator === "undefined") return "zh-CN";
   return detectLocaleFromLanguages(navigator.languages, navigator.language);
 }
 
@@ -103,6 +112,7 @@ const SettingsSchema = z.object({
     motion: z.enum(["instant", "standard", "ceremony"]),
     soundProfile: z.enum(["minimal", "mechanical", "dice"]),
     particles: z.boolean(),
+    sequentialReveal: z.boolean().optional().default(true),
   }),
   desktop: z.object({
     displayMode: z.enum(["normal", "fullscreen", "overlay"]),
@@ -149,6 +159,7 @@ const OperationSchema = z.union([
 const HistorySchema = z.object({
   id: z.string(),
   transactionId: z.string().optional(),
+  note: z.string().optional(),
   createdAt: z.string().nullable(),
   mode: z.enum(["range", "custom", "weighted", "expression"]),
   config: SettingsSchema,
@@ -259,6 +270,7 @@ function normalizeSettings(value: unknown): DrawSettings {
       motion: ["instant", "standard", "ceremony"].includes(appearance.motion) ? appearance.motion : "standard",
       soundProfile: ["minimal", "mechanical", "dice"].includes(appearance.soundProfile) ? appearance.soundProfile : "minimal",
       particles: appearance.particles !== false,
+      sequentialReveal: appearance.sequentialReveal !== false,
     },
     desktop: {
       displayMode: ["normal", "fullscreen", "overlay"].includes(desktop.displayMode) ? desktop.displayMode : "normal",
@@ -400,6 +412,7 @@ function normalizeHistory(value: unknown): HistoryEntry[] {
           receipt: entry.receipt,
           sessionId: entry.sessionId,
           presetId: entry.presetId,
+          note: typeof entry.note === "string" && entry.note.trim() ? entry.note.trim() : undefined,
           legacy: entry.transactionId ? Boolean(entry.legacy) : true,
         },
       ];
