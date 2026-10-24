@@ -2,7 +2,7 @@
 
 ## Install
 
-Use `RandDeck.exe` for a portable launch when WebView2 Runtime is already installed. Use `RandDeck-v0.6.0-offline-setup.exe` when the target computer may need the bundled offline WebView2 installer. The multi-file ZIP should be extracted before launching.
+Use `RandDeck.exe` for a portable launch when WebView2 Runtime is already installed. Use `RandDeck-v0.7.0-offline-setup.exe` when the target computer may need the bundled offline WebView2 installer. The multi-file ZIP should be extracted before launching.
 
 Before running a downloaded artifact, compare its SHA256 value with the GitHub Release. The application is currently unsigned, so Windows SmartScreen may show an unknown-publisher warning.
 

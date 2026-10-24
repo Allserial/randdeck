@@ -40,6 +40,9 @@ test("范围排除、抽后移除、事务撤销形成完整闭环", async ({ pa
   await page.getByRole("button", { name: "重掷所选" }).click();
   const rerolled = await resultValues(page);
   expect(rerolled[0]).toBe(first[0]);
+  await expect(page.locator(".result-tile").nth(1)).toHaveClass(/selected/);
+  await expect(page.getByText(/固定 1 项|1 pinned/)).toBeVisible();
+  await tiles.nth(1).click();
   await expect(page.getByText(/已固定 1 项|1 pinned/)).toBeVisible();
 
   await page.getByRole("switch", { name: /抽后移除/ }).click();
@@ -47,7 +50,9 @@ test("范围排除、抽后移除、事务撤销形成完整闭环", async ({ pa
   await page.getByRole("button", { name: /生成结果/ }).click();
   const noDup = await resultValues(page);
   expect(new Set(noDup).size).toBe(3);
-  expect(noDup[0]).toBe(first[0]);
+  // Changing probability rules now explicitly releases pins, instead of carrying old values.
+  await expect(page.locator(".result-tile.pinned")).toHaveCount(0);
+  expect(noDup.every(value => allowed.has(value))).toBeTruthy();
   await expect(page.getByRole("button", { name: /重置已抽记录/ })).toBeVisible();
   await page.getByRole("button", { name: /撤销本次抽取|Undo this draw/ }).click();
   await expect(page.getByRole("status").getByText(/撤销本次抽取|Undo this draw/)).toBeVisible();
@@ -152,7 +157,7 @@ test("审计回执、完整备份和展示窗口可离线传递当前结果", as
   await page.getByLabel("主导航").getByRole("button", { name: /设置/ }).click();
   const backupDownload = page.waitForEvent("download");
   await page.getByRole("button", { name: /导出完整备份/ }).click();
-  expect((await backupDownload).suggestedFilename()).toBe("掷数台-v0.6.0-完整备份.json");
+  expect((await backupDownload).suggestedFilename()).toBe("掷数台-v0.7.0-完整备份.json");
 });
 
 test("语言切换、重启持久化、展示窗口与备份恢复保持同步", async ({ page, context }) => {
@@ -189,7 +194,7 @@ test("语言切换、重启持久化、展示窗口与备份恢复保持同步",
   const backupDownload = page.waitForEvent("download");
   await page.getByRole("button", { name: "Export full backup" }).click();
   const download = await backupDownload;
-  expect(download.suggestedFilename()).toBe("RandDeck-v0.6.0-full-backup.json");
+  expect(download.suggestedFilename()).toBe("RandDeck-v0.7.0-full-backup.json");
   const stream = await download.createReadStream();
   const chunks: Buffer[] = [];
   for await (const chunk of stream) chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));

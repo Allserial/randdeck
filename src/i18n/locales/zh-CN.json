@@ -8,7 +8,7 @@
     "retry": "重试",
     "workspaceUnavailable": "当前工作区暂时不可用",
     "preparing": "正在准备工作台",
-    "localWorkspace": "本地随机工作台",
+    "localWorkspace": "方寸之间 · 落子成数",
     "about": "RandDeck / 掷数台"
   },
   "common": {
@@ -175,7 +175,7 @@
     "stage": "结果舞台",
     "waiting": "等待抽取",
     "countdown": "倒计时 {{seconds}} 秒",
-    "revealing": "排名揭晓中",
+    "revealing": "正在揭晓结果",
     "finished": "揭晓完成",
     "drawing": "正在抽出…",
     "currentResult": "本次结果",
@@ -186,10 +186,10 @@
     "copiedAll": "已复制全部结果",
     "stopCeremony": "终止仪式",
     "aboutToReveal": "即将揭晓结果…",
-    "revealDone": "排 名 揭 晓 完 毕",
-    "revealTitle": "排 名 揭 晓",
+    "revealDone": "结 果 揭 晓 完 毕",
+    "revealTitle": "结 果 揭 晓",
     "emptyTitle": "按空格或右侧生成",
-    "emptyDescription": "从候选池中抽出真正的随机数",
+    "emptyDescription": "配置抽取规则，点击生成开启随机抽取",
     "return": "返回抽取台",
     "countdownStatus": "倒计时中 · 按 Esc 随时终止",
     "revealingStatus": "正在逐张揭晓 ({{current}}/{{total}})",
@@ -215,32 +215,56 @@
       "expression": "骰面"
     },
     "trace": "骰面明细",
-    "display": "打开展示窗口"
+    "display": "打开展示窗口",
+    "note": "备注",
+    "editNote": "编辑备注",
+    "addNote": "添加备注",
+    "batchNote": "批次备注",
+    "saveNote": "保存备注",
+    "notePlaceholder": "输入当前批次备注（如：第 1 轮检定）"
   },
   "settings": {
     "mute": "静音",
     "unmute": "开启音效",
-    "language": { "label": "语言", "zhCN": "简体中文", "enUS": "English" },
+    "language": {
+      "label": "语言",
+      "zhCN": "简体中文",
+      "enUS": "English"
+    },
     "system": "系统设置",
-    "heading": "外观、展示与本地数据",
+    "heading": "偏好设置与系统选项",
     "appearance": "外观与反馈",
-    "appearanceDescription": "墨蓝底 + 琥珀铜金属质感 2D 工作台。",
+    "appearanceDescription": "深邃墨蓝搭配流金铜色，沉浸式工作台体验。",
     "theme": "主题",
-    "themes": { "dark": "标准墨蓝", "light": "暖灰浅色", "contrast": "高对比" },
+    "themes": {
+      "dark": "标准墨蓝",
+      "light": "暖灰浅色",
+      "contrast": "高对比"
+    },
     "motion": "动态效果",
-    "motions": { "instant": "即时", "standard": "标准", "ceremony": "仪式" },
+    "motions": {
+      "instant": "即时",
+      "standard": "标准",
+      "ceremony": "仪式"
+    },
     "motionDescriptions": {
-      "instant": "无跳动、无仪式、无礼花；倒计时结束后一次揭晓。",
-      "standard": "短跳动；倒计时后生成仍逐张揭晓，礼花较弱。",
-      "ceremony": "完整揭晓节奏与全屏礼花。"
+      "instant": "去除过渡动效与粒子礼花，倒计时结束后即时揭晓。",
+      "standard": "轻快翻牌动效，倒计时后逐张平滑呈现，伴随适度粒子反馈。",
+      "ceremony": "沉浸式翻牌节奏与全屏流金礼花，极具揭晓仪式感。"
     },
     "sound": "音效风格（切换试听）",
     "mutedNotice": "当前已静音",
-    "sounds": { "minimal": "极简", "mechanical": "机械", "dice": "骰子" },
+    "sounds": {
+      "minimal": "极简",
+      "mechanical": "机械",
+      "dice": "骰子"
+    },
     "particles": "仪式粒子效果",
-    "particlesHelp": "仅在抽取完成时迸发 2D 铜金碎屑",
+    "particlesHelp": "抽取完成时呈现流金粒子视觉反馈",
+    "sequentialReveal": "逐个揭示",
+    "sequentialRevealHelp": "仪式动效下按节奏从左往右逐张揭晓结果卡牌",
     "displayWindow": "独立展示窗口",
-    "displayDescription": "可投屏演示或透明置顶悬浮。",
+    "displayDescription": "支持外接屏幕全屏演示或桌面透明置顶悬浮。",
     "displayMode": "展示模式选择",
     "displayModeHelp": "支持普通视窗、全屏横向演示与无边框透明置顶",
     "normalWindow": "普通窗口",
@@ -250,12 +274,12 @@
     "clickThroughHelp": "开启后鼠标点击可直接穿透展示窗口到下层窗口",
     "disableClickThrough": "立即关闭鼠标穿透",
     "localData": "本地数据与备份",
-    "localDataDescription": "纯本地加密级生成，支持导出/导入版本化完整数据。",
+    "localDataDescription": "所有数据完全保存在本地设备，支持完整备份导出与恢复。",
     "exportBackup": "导出完整备份",
     "restoreBackup": "恢复备份",
     "migrationLog": "数据迁移记录",
     "restoreTitle": "恢复完整备份",
-    "restoreDescription": "恢复备份将整体替换当前应用的历史、池配置与统计数据。",
+    "restoreDescription": "恢复备份将覆盖当前的历史记录、候选池配置与统计数据。",
     "restorePending": "正在校验备份文件…",
     "replaceConfirm": "确认替换",
     "restoreSummary": "历史 {{history}} 批，自定义 {{custom}} 行，会话归档 {{sessions}} 个",
@@ -275,7 +299,8 @@
   },
   "insights": {
     "title": "数据洞察",
-    "heading": "验证分布，不预测结果",
+    "heading": "统计分布与历史记录",
+    "description": "汇总各模式的抽取记录、频次分布与理论概率。",
     "viewLabel": "数据洞察视图",
     "overview": "概览",
     "history": "历史",
@@ -306,10 +331,14 @@
     "addCompare": "加入对比",
     "copyBatch": "复制该批",
     "deleteBatch": "删除该批",
+    "note": "备注",
+    "editNote": "编辑备注",
+    "addNote": "添加备注",
+    "batchNote": "批次备注",
     "noMatchingHistory": "没有符合筛选条件的历史",
     "engine": "混合引擎",
     "analysisHeading": "当前配置概率分析",
-    "analysisDescription": "优先精确计算；状态过大、爆骰、重掷或标签约束自动改用可复算模拟。",
+    "analysisDescription": "优先采用理论精确计算；对于复杂规则、重掷或标签约束，自动切换为高精度模拟。",
     "sampleCount": "模拟样本数",
     "startAnalysis": "开始分析",
     "cancelAnalysis": "取消分析",
@@ -318,8 +347,8 @@
     "analysisComplete": "概率分析完成",
     "reasons": {
       "explodeOrReroll": "爆骰或重掷使用模拟分析",
-      "diceCombinationsBudget": "骰子组合超过精确计算预算",
-      "diceStatesBudget": "骰子状态超过精确计算预算",
+      "diceCombinationsBudget": "骰子组合数超出理论枚举上限",
+      "diceStatesBudget": "状态复杂度超出理论枚举上限",
       "expressionStatesBudget": "表达式状态超过精确计算预算",
       "weightedCandidatesBudget": "加权无放回候选过多",
       "weightedStatesBudget": "加权无放回状态超过精确计算预算",
@@ -329,7 +358,7 @@
       "weightedWithoutReplacement": "加权动态无放回精确枚举",
       "normalizedWeight": "归一化权重",
       "uniformPool": "等概率候选池",
-      "simulationFallback": "精确状态不可用或超过预算"
+      "simulationFallback": "超出精确枚举上限，已自动切换为高精度模拟"
     },
     "exactProbability": "精确概率",
     "simulatedProbability": "模拟概率 · {{count}} 次",
@@ -337,10 +366,10 @@
     "expectedPerBatch": "每批期望 {{value}}",
     "observed": "实际 {{value}}",
     "clearHistoryTitle": "清空全部历史",
-    "clearHistoryDescription": "统计账本不会随普通历史删除而改变。",
-    "clearHistoryBody": "此操作会删除历史批次并清空结果舞台，无法撤销。",
+    "clearHistoryDescription": "累计统计数据不会随历史记录删除而重置。",
+    "clearHistoryBody": "此操作将永久清空历史记录并重置展示台，操作后无法撤销。",
     "confirmClear": "确认清空",
-    "historyCleared": "历史与结果舞台已清空，统计保持不变",
+    "historyCleared": "历史记录与展示台已清空，累计统计保持不变",
     "statsCleared": "{{mode}}统计已清零"
   },
   "studio": {
@@ -385,7 +414,10 @@
     "ruleLabel": "标签",
     "deleteRule": "删除规则 {{label}}"
   },
-  "display": { "close": "关闭展示窗口", "waiting": "等待主窗口生成结果" },
+  "display": {
+    "close": "关闭展示窗口",
+    "waiting": "等待主窗口生成结果"
+  },
   "charts": {
     "frequency": "频次",
     "occurrences": "出现次数",
@@ -402,7 +434,7 @@
     "recallMissing": "找不到要召回的批次",
     "copy": "复制失败，请检查剪贴板权限",
     "drawFailed": "生成失败",
-    "cannotUndo": "当前结果不能事务撤销",
+    "cannotUndo": "当前抽取结果已无法撤销",
     "selectReroll": "请先选择需要重掷的结果",
     "fixedAll": "本次结果已全部固定，请先取消固定再生成",
     "fixedTooMany": "固定结果有 {{fixed}} 项，超过本次抽取数量 {{count}}",
@@ -482,5 +514,21 @@
     "storageReadFailed": "读取 v{{version}} 存储失败：{{message}}",
     "legacyMigrationFailed": "旧数据迁移失败：{{message}}",
     "unknown": "未知错误"
+  },
+  "visual": {
+    "resultSource": "结果来源：{{mode}}",
+    "historyPlayback": "历史回放",
+    "previousConfiguration": "沿用上批配置生成；重新生成后可继续重掷或固定",
+    "nextConfiguration": "下一次抽取",
+    "filtered": "当前筛选记录",
+    "ledger": "当前模式累计统计（不受历史筛选影响）",
+    "pageRange": "第 {{start}}–{{end}} 项，共 {{total}} 项",
+    "previous": "上一页",
+    "next": "下一页",
+    "historyActions": "记录操作",
+    "value": "结果",
+    "probability": "概率",
+    "expected": "每批期望次数",
+    "observed": "实际次数"
   }
 }

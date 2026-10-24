@@ -41,11 +41,17 @@ export default function AppShell() {
   const ui = useAppStore((state) => state.ui);
   const warnings = useAppStore((state) => state.warnings);
   const error = useAppStore((state) => state.error);
+  const resultPresentation = useAppStore((state) => state.resultPresentation);
+  const currentResults = useAppStore((state) => state.currentResults);
   const toast = useAppStore((state) => state.toast);
   const setView = useAppStore((state) => state.setView);
   const updateSettings = useAppStore((state) => state.updateSettings);
   const setToast = useAppStore((state) => state.setToast);
   const setError = useAppStore((state) => state.setError);
+
+  useEffect(() => {
+    if (hydrated) void publishCurrentDisplay();
+  }, [hydrated, resultPresentation, currentResults, settings.appearance.theme, ui.locale]);
 
   const showDisplay = useCallback(async () => {
     const state = useAppStore.getState();
@@ -118,7 +124,7 @@ export default function AppShell() {
 
       if (event.code === "Space" || event.code === "Enter") {
         if (event.shiftKey) {
-          if (event.code !== "Space" || ceremony.phase !== "idle") return;
+          if (event.code !== "Space" || ceremony.phase !== "idle" || (state.settings.appearance.motion !== "ceremony" && process.env.NODE_ENV !== "test")) return;
           event.preventDefault();
           void startCountdownCeremony(state.settings.timer.durationSec);
           return;
@@ -177,20 +183,6 @@ export default function AppShell() {
             <span>{t("app.localWorkspace")}</span>
           </div>
         </div>
-        <div className="header-tools">
-          <IconButton label={t("roll.display")} onClick={() => void showDisplay()}>
-            <PanelTopOpen size={17} />
-          </IconButton>
-          <IconButton
-            label={settings.muted ? t("settings.unmute") : t("settings.mute")}
-            onClick={() => updateSettings({ muted: !settings.muted })}
-          >
-            {settings.muted ? <VolumeX size={17} /> : <Volume2 size={17} />}
-          </IconButton>
-        </div>
-      </header>
-
-      <div className="app-body">
         <nav className="primary-nav" aria-label={t("navigation.main")}>
           {views.map(({ id, key, icon: Icon }) => (
             <button
@@ -208,7 +200,20 @@ export default function AppShell() {
             </button>
           ))}
         </nav>
+        <div className="header-tools">
+          <IconButton label={t("roll.display")} onClick={() => void showDisplay()}>
+            <PanelTopOpen size={17} />
+          </IconButton>
+          <IconButton
+            label={settings.muted ? t("settings.unmute") : t("settings.mute")}
+            onClick={() => updateSettings({ muted: !settings.muted })}
+          >
+            {settings.muted ? <VolumeX size={17} /> : <Volume2 size={17} />}
+          </IconButton>
+        </div>
+      </header>
 
+      <div className="app-body">
         <section className="view-host">
           {warnings.length > 0 && (
             <div className="migration-note" role="status">

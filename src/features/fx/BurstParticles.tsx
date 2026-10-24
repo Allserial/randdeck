@@ -19,6 +19,9 @@ interface ConfettiParticle {
   opacity: number;
   life: number;
   maxLife: number;
+  shape: "rect" | "star" | "diamond";
+  twinkleSpeed: number;
+  twinklePhase: number;
 }
 
 const AMBER_COPPER_COLORS = ["#d4a054", "#e8c36a", "#f0c57a", "#c4842a", "#ffeed1", "#f5be6b"];
@@ -92,6 +95,9 @@ export function BurstParticles({
           opacity: 1,
           life: 0,
           maxLife: 38 + Math.floor(Math.random() * 14),
+          shape: i % 3 === 0 ? "star" : i % 3 === 1 ? "diamond" : "rect",
+          twinkleSpeed: 0.15 + Math.random() * 0.25,
+          twinklePhase: Math.random() * Math.PI * 2,
         });
       }
     } else {
@@ -134,6 +140,9 @@ export function BurstParticles({
             opacity: 1,
             life: 0,
             maxLife: 75 + Math.floor(Math.random() * 50),
+            shape: i % 3 === 0 ? "star" : i % 3 === 1 ? "diamond" : "rect",
+            twinkleSpeed: 0.15 + Math.random() * 0.25,
+            twinklePhase: Math.random() * Math.PI * 2,
           });
         }
       };
@@ -187,7 +196,9 @@ export function BurstParticles({
         p.rotation += p.rotationSpeed;
 
         const progress = p.life / p.maxLife;
-        p.opacity = Math.max(0, 1 - Math.pow(progress, 2.5));
+        const baseOpacity = Math.max(0, 1 - Math.pow(progress, 2.5));
+        const twinkle = 0.78 + 0.22 * Math.sin(p.life * p.twinkleSpeed + p.twinklePhase);
+        p.opacity = baseOpacity * twinkle;
 
         context.save();
         context.translate(p.x, p.y);
@@ -197,12 +208,35 @@ export function BurstParticles({
         context.shadowColor = p.color;
         context.shadowBlur = 6;
 
-        // 矩形粒子带圆角
-        const hw = p.width / 2;
-        const hh = p.height / 2;
-        context.beginPath();
-        context.roundRect(-hw, -hh, p.width, p.height, 1.5);
-        context.fill();
+        if (p.shape === "star") {
+          const rOuter = Math.max(p.width, p.height) * 0.72;
+          const rInner = rOuter * 0.28;
+          context.beginPath();
+          for (let k = 0; k < 8; k++) {
+            const r = k % 2 === 0 ? rOuter : rInner;
+            const a = (k * Math.PI) / 4;
+            if (k === 0) context.moveTo(Math.cos(a) * r, Math.sin(a) * r);
+            else context.lineTo(Math.cos(a) * r, Math.sin(a) * r);
+          }
+          context.closePath();
+          context.fill();
+        } else if (p.shape === "diamond") {
+          const rx = p.width * 0.65;
+          const ry = p.height * 0.65;
+          context.beginPath();
+          context.moveTo(0, -ry);
+          context.lineTo(rx, 0);
+          context.lineTo(0, ry);
+          context.lineTo(-rx, 0);
+          context.closePath();
+          context.fill();
+        } else {
+          const hw = p.width / 2;
+          const hh = p.height / 2;
+          context.beginPath();
+          context.roundRect(-hw, -hh, p.width, p.height, 1.5);
+          context.fill();
+        }
 
         context.restore();
       }

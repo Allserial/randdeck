@@ -1,7 +1,9 @@
 import type { AppLocale, CeremonyPhase, DrawMode, DrawResult, ThemeMode } from "../domain/types";
+import type { ResultPresentationContext } from "../app/resultPresentation";
 import { isTauriRuntime } from "./persistence";
 
 export interface DisplayPayload {
+  context?: ResultPresentationContext | null;
   results: DrawResult[];
   mode: string;
   modeKey?: DrawMode;

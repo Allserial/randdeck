@@ -1,5 +1,25 @@
 # 更新日志
 
+## 0.7.0 - 2026-10-25
+
+### English
+
+- Re-forged the workbench visual architecture with an integrated sunken astrolabe stage, dark/light/high-contrast themes, and custom brass-styled scrollbars.
+- Added proportional container-query scaling so result cards maintain their golden aspect ratio across standard and maximized high-DPI windows.
+- Added batch notes via right-click context menu on recent batches and quick action bar, synchronized with Data Insights history filtering.
+- Upgraded ceremony motion settings with an expandable sub-panel (countdown duration `3s`/`5s`/`10s`, sequential card reveal toggle, and ceremony particle effects toggle) while defaulting first-time installs to Standard motion.
+- Rebuilt the audio engine with pure Web Audio API harmonic & physical resonance synthesis (astrolabe countdown pulse, brass ratchet mechanical clicks, and multi-bounce dice acoustics), removing the external `tone` dependency.
+- Redesigned the application icon with a dark-obsidian rounded badge and luminous gold astrolabe for high visibility on dark Windows taskbars.
+
+### 中文
+
+- 重铸工作台整体视觉架构：采用一体式下沉星盘大舞台、深邃墨蓝/暖灰浅色/高对比三套主题，以及定制无箭头星盘黄铜细滚动条。
+- 新增基于容器查询（Container Queries）的等比流体缩放机制，确保窗口最大化与高分屏下结果卡牌严格保持黄金宽高比。
+- 新增历史批次备注功能：支持在“最近批次”右键或通过舞台底栏快捷添加/编辑备注，并在“数据洞察”中实时检索过滤。
+- 升级“仪式”动态效果专属子面板（支持 `3s`/`5s`/`10s` 倒计时切换、逐个揭示开关、仪式粒子效果开关），首次启动默认动态效果设为“标准”。
+- 基于原生 Web Audio API 物理泛音与共振合成重做音效引擎（星盘低频脉冲倒计时、精密黄铜棘轮机械音、多面骰桌面弹跳序列），移除 `tone` 第三方依赖。
+- 重新设计高对比暗金星盘应用图标，大幅提升深色模式与 Windows 黑色任务栏下的辨识度。
+
 ## 0.6.0 - 2026-08-21
 
 ### English

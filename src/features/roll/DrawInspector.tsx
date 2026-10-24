@@ -1,9 +1,9 @@
 import { useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { ChevronDown, ChevronUp, Edit3, ListOrdered, Minus, Plus, RotateCcw, Sparkles, Timer, Trash2, X } from "lucide-react";
+import { ChevronDown, ChevronUp, Edit3, Minus, Plus, RotateCcw, Trash2, X } from "lucide-react";
 import clsx from "clsx";
 import { useAppStore } from "../../app/store";
-import { generateDraw, generateShuffle, startCountdownCeremony } from "../../app/drawController";
+import DrawActions from "./DrawActions";
 import { getPoolStatus } from "../../domain/draw";
 import { parseDiceExpression, describeDiceExpression } from "../../domain/dice";
 import { parseExclusionInput } from "../../domain/random";
@@ -12,7 +12,7 @@ import { Dialog } from "../../components/ui/Dialog";
 import { Segmented } from "../../components/ui/Segmented";
 import { Tooltip } from "../../components/ui/Tooltip";
 import PoolEditor from "../studio/PoolEditor";
-import { formatDrawSummary } from "../../lib/drawSummary";
+
 import { translateRuntimeMessage } from "../../i18n/messages";
 
 const quickCounts = [1, 3, 5, 10];
@@ -130,7 +130,7 @@ function CountStepper({ count, onChange }: { count: number; onChange: (value: nu
   );
 }
 
-export default function DrawInspector() {
+export default function DrawInspector({ showActions = true }: { showActions?: boolean }) {
   const { t } = useTranslation();
   const translate = t as unknown as (key: string, options?: Record<string, unknown>) => string;
   const settings = useAppStore((state) => state.settings);
@@ -192,7 +192,7 @@ export default function DrawInspector() {
     excludeInputRef.current?.focus();
   };
 
-  const summary = formatDrawSummary(settings, pools, poolStatus, t);
+
 
   return (
     <aside className="draw-inspector" aria-label={t("roll.inspector")}>
@@ -396,38 +396,6 @@ export default function DrawInspector() {
           </section>
         )}
 
-        {/* 4. 倒计时仪式区块 */}
-        <section className="inspector-section" aria-labelledby="section-timer">
-          <span className="section-label" id="section-timer">{t("roll.timerSection")}</span>
-          <div className="timer-box">
-            <div className="quick-values">
-              {[3, 5, 10].map((value) => (
-                <Tooltip key={value} content={t("roll.timerSet", { seconds: value })}>
-                  <button
-                    type="button"
-                    className={settings.timer.durationSec === value ? "active" : ""}
-                    disabled={disabled}
-                    onClick={() => update({ timer: { ...settings.timer, durationSec: value } })}
-                  >
-                    {value} {t("common.units.seconds")}
-                  </button>
-                </Tooltip>
-              ))}
-            </div>
-            <Tooltip content={t("roll.timerTip")}>
-              <Button
-                className="countdown-start-btn"
-                variant="quiet"
-                icon={<Timer size={16} />}
-                aria-keyshortcuts="Shift+Space"
-                disabled={disabled || Boolean(poolStatus.error && settings.mode !== "expression")}
-                onClick={() => void startCountdownCeremony(settings.timer.durationSec)}
-              >
-                {t("roll.countdownGenerate", { seconds: settings.timer.durationSec })}
-              </Button>
-            </Tooltip>
-          </div>
-        </section>
 
         {/* 5. 高级标签筛选区块 (只在自定义池模式显示，范围与骰子完全不出现) */}
         {settings.mode === "custom" && (
@@ -498,36 +466,7 @@ export default function DrawInspector() {
       </div>
 
       {/* 底部独立底栏 (Item 1: 生成结果全宽主操作，打乱全池为下方安静次要) */}
-      <footer className="inspector-footer">
-        <div id="draw-config-summary" className={clsx("draw-config-summary", summary.invalid && "is-invalid")}>
-          {summary.visible}
-        </div>
-        <Button
-          variant="primary"
-          className="generate-main-btn"
-          icon={<Sparkles size={18} />}
-          disabled={disabled || Boolean(poolStatus.error && settings.mode !== "expression")}
-          aria-describedby="draw-config-summary"
-          aria-keyshortcuts="Space Enter"
-          onClick={() => void generateDraw()}
-        >
-          <span>{isDrawing ? t("roll.generating") : ceremony.phase !== "idle" ? t("roll.ceremonyActive") : t("roll.generate")}</span>
-          {!isDrawing && ceremony.phase === "idle" && <small className="btn-key-hint">{t("roll.keyboardSpace")}</small>}
-        </Button>
-        {settings.mode !== "expression" && (
-          <Tooltip content={t("roll.shuffleTip")}>
-            <button
-              type="button"
-              className="shuffle-sub-btn"
-              disabled={disabled || Boolean(poolStatus.error)}
-              onClick={() => void generateShuffle()}
-            >
-              <ListOrdered size={14} />
-              <span>{t("roll.shuffle")}</span>
-            </button>
-          </Tooltip>
-        )}
-      </footer>
+      {showActions && <DrawActions />}
 
       <Dialog
         open={poolEditorOpen}

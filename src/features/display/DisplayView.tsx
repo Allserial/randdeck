@@ -3,7 +3,7 @@ import { useTranslation } from "react-i18next";
 import { Dices, Sparkles, X } from "lucide-react";
 import clsx from "clsx";
 import { closeCurrentDisplayWindow, listenDisplayState, setDisplayWindowTitle, type DisplayPayload } from "../../platform/desktop";
-import { ResultBoard } from "../roll/ResultVisual";
+import { ResultBoard, StageAstrolabe } from "../roll/ResultVisual";
 import { BurstParticles, type BurstOrigin } from "../fx/BurstParticles";
 import type { DrawMode } from "../../domain/types";
 import BrandMark from "../../components/BrandMark";
@@ -112,6 +112,8 @@ export default function DisplayView() {
         <X size={18} />
       </button>
 
+      <StageAstrolabe />
+
       {isCeremonyActive && ceremony && (
         <>
           {/* 终场 4 波全屏礼花雨 */}
@@ -177,7 +179,9 @@ export default function DisplayView() {
             </div>
           </div>
           <div className="display-meta">
-            <strong>{modeLabel(payload.modeKey || payloadMode(payload.mode), payload.locale)}</strong>
+            <strong>{modeLabel(payload.modeKey || payloadMode(payload.mode), payload.locale)}
+              {payload.context?.mode === "range" ? ` · ${payload.context.config.min}–${payload.context.config.max}` : payload.context?.mode === "expression" ? ` · ${payload.context.config.expression.source}` : ""}
+            </strong>
             <span>{payload.summary}</span>
           </div>
         </>

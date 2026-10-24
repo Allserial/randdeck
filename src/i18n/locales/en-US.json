@@ -8,7 +8,7 @@
     "retry": "Retry",
     "workspaceUnavailable": "This workspace is temporarily unavailable",
     "preparing": "Preparing the workbench",
-    "localWorkspace": "Local random workbench",
+    "localWorkspace": "Precision Random & Dice Instrument",
     "about": "RandDeck / 掷数台"
   },
   "common": {
@@ -175,7 +175,7 @@
     "stage": "Result stage",
     "waiting": "Waiting for a draw",
     "countdown": "Countdown: {{seconds}} sec",
-    "revealing": "Revealing the ranking",
+    "revealing": "Revealing results",
     "finished": "Reveal complete",
     "drawing": "Drawing…",
     "currentResult": "Current result",
@@ -189,7 +189,7 @@
     "revealDone": "R E V E A L   C O M P L E T E",
     "revealTitle": "R E V E A L",
     "emptyTitle": "Press Space or use Generate",
-    "emptyDescription": "Draw a true random value from the candidate pool",
+    "emptyDescription": "Configure rules and press generate to draw random numbers",
     "return": "Back to draw deck",
     "countdownStatus": "Counting down · press Esc to stop",
     "revealingStatus": "Revealing cards ({{current}}/{{total}})",
@@ -215,16 +215,26 @@
       "expression": "Dice"
     },
     "trace": "Dice trace",
-    "display": "Open display window"
+    "display": "Open display window",
+    "note": "Note",
+    "editNote": "Edit note",
+    "addNote": "Add note",
+    "batchNote": "Batch note",
+    "saveNote": "Save note",
+    "notePlaceholder": "Enter note for this batch (e.g. Round 1 check)"
   },
   "settings": {
     "mute": "Mute",
     "unmute": "Enable sound",
-    "language": { "label": "Language", "zhCN": "简体中文", "enUS": "English" },
+    "language": {
+      "label": "Language",
+      "zhCN": "简体中文",
+      "enUS": "English"
+    },
     "system": "System settings",
-    "heading": "Appearance, display, and local data",
+    "heading": "Preferences & System Settings",
     "appearance": "Appearance and feedback",
-    "appearanceDescription": "A dark blue 2D workbench with restrained amber-metal accents.",
+    "appearanceDescription": "Deep ink-blue theme with polished metallic accents and responsive feedback.",
     "theme": "Theme",
     "themes": {
       "dark": "Standard dark",
@@ -238,9 +248,9 @@
       "ceremony": "Ceremony"
     },
     "motionDescriptions": {
-      "instant": "No bounce, ceremony, or confetti; reveal everything at once.",
-      "standard": "Short bounce; countdown reveals cards one by one with lighter particles.",
-      "ceremony": "Full reveal rhythm with large-screen particles."
+      "instant": "No transitions or particle bursts; reveal results immediately after countdown.",
+      "standard": "Crisp flip motion; cards reveal sequentially after countdown with balanced particle effects.",
+      "ceremony": "Immersive card-reveal pacing and full-screen golden particles for high celebration."
     },
     "sound": "Sound style (preview on change)",
     "mutedNotice": "Sound is muted",
@@ -250,9 +260,11 @@
       "dice": "Dice"
     },
     "particles": "Ceremony particles",
-    "particlesHelp": "Emit restrained 2D copper-gold particles when a draw completes",
+    "particlesHelp": "Celebrate completed draws with flowing metallic particle feedback",
+    "sequentialReveal": "Sequential reveal",
+    "sequentialRevealHelp": "Reveal result cards one by one in rhythm under ceremony motion",
     "displayWindow": "Independent display window",
-    "displayDescription": "Use it for projection, presentations, or an always-on-top overlay.",
+    "displayDescription": "Present in fullscreen on external displays or float as a transparent overlay.",
     "displayMode": "Display mode",
     "displayModeHelp": "Normal window, fullscreen presentation, or frameless transparent overlay",
     "normalWindow": "Normal window",
@@ -262,12 +274,12 @@
     "clickThroughHelp": "Mouse clicks pass through the display window to the window below",
     "disableClickThrough": "Turn off click-through now",
     "localData": "Local data and backups",
-    "localDataDescription": "Offline generation with versioned full-data export and import.",
+    "localDataDescription": "All data stays strictly on your local device. Export or restore complete backups anytime.",
     "exportBackup": "Export full backup",
     "restoreBackup": "Restore backup",
     "migrationLog": "Migration log",
     "restoreTitle": "Restore full backup",
-    "restoreDescription": "Restoring replaces the current history, pools, and statistics.",
+    "restoreDescription": "Restoring a backup will overwrite existing history, pool configurations, and statistics.",
     "restorePending": "Validating backup…",
     "replaceConfirm": "Replace data",
     "restoreSummary": "{{history}} history batches, {{custom}} custom rows, {{sessions}} archived sessions",
@@ -287,7 +299,8 @@
   },
   "insights": {
     "title": "Insights",
-    "heading": "Validate distributions, do not predict outcomes",
+    "heading": "Distribution & Draw History",
+    "description": "Aggregate draw history, frequency distributions, and theoretical probabilities across modes.",
     "viewLabel": "Insights view",
     "overview": "Overview",
     "history": "History",
@@ -318,10 +331,14 @@
     "addCompare": "Add to comparison",
     "copyBatch": "Copy batch",
     "deleteBatch": "Delete batch",
+    "note": "Note",
+    "editNote": "Edit note",
+    "addNote": "Add note",
+    "batchNote": "Batch note",
     "noMatchingHistory": "No history matches these filters",
     "engine": "Hybrid engine",
     "analysisHeading": "Analyze current configuration",
-    "analysisDescription": "Prefer exact math; large states, exploding/rerolling dice, or tag constraints use reproducible simulation.",
+    "analysisDescription": "Uses exact theoretical calculation where possible; automatically switches to high-sample simulation for complex rules or constraints.",
     "sampleCount": "Simulation samples",
     "startAnalysis": "Start analysis",
     "cancelAnalysis": "Cancel analysis",
@@ -330,8 +347,8 @@
     "analysisComplete": "Probability analysis complete",
     "reasons": {
       "explodeOrReroll": "Exploding or rerolled dice use simulation",
-      "diceCombinationsBudget": "Dice combinations exceed the exact-computation budget",
-      "diceStatesBudget": "Dice states exceed the exact-computation budget",
+      "diceCombinationsBudget": "Dice combination count exceeds theoretical calculation limits",
+      "diceStatesBudget": "State complexity exceeds theoretical calculation limits",
       "expressionStatesBudget": "Expression states exceed the exact-computation budget",
       "weightedCandidatesBudget": "Too many weighted candidates for exact sampling without replacement",
       "weightedStatesBudget": "Weighted states exceed the exact-computation budget",
@@ -341,7 +358,7 @@
       "weightedWithoutReplacement": "Exact weighted enumeration without replacement",
       "normalizedWeight": "Normalized weights",
       "uniformPool": "Uniform candidate pool",
-      "simulationFallback": "Exact states are unavailable or exceed the budget"
+      "simulationFallback": "Exceeds exact math capacity; automatically switched to simulation"
     },
     "exactProbability": "Exact probability",
     "simulatedProbability": "Simulated probability · {{count}} samples",
@@ -349,10 +366,10 @@
     "expectedPerBatch": "Expected per batch {{value}}",
     "observed": "Observed {{value}}",
     "clearHistoryTitle": "Clear all history",
-    "clearHistoryDescription": "The statistics ledger is not changed by ordinary history deletion.",
-    "clearHistoryBody": "This deletes history and clears the result stage. It cannot be undone.",
+    "clearHistoryDescription": "Cumulative statistics are preserved when clearing history records.",
+    "clearHistoryBody": "This will permanently clear all history records and reset the stage. This action cannot be undone.",
     "confirmClear": "Clear history",
-    "historyCleared": "History and result stage cleared; statistics kept",
+    "historyCleared": "History and stage cleared; cumulative statistics preserved",
     "statsCleared": "{{mode}} statistics reset"
   },
   "studio": {
@@ -417,7 +434,7 @@
     "recallMissing": "The requested batch could not be found",
     "copy": "Copy failed. Check clipboard permission.",
     "drawFailed": "Generation failed",
-    "cannotUndo": "The current result cannot be undone as a transaction",
+    "cannotUndo": "The current draw result cannot be undone",
     "selectReroll": "Select results to reroll first",
     "fixedAll": "All results are pinned. Unpin some before generating.",
     "fixedTooMany": "{{fixed}} pinned results exceed the draw count of {{count}}",
@@ -497,5 +514,21 @@
     "storageReadFailed": "Could not read v{{version}} storage: {{message}}",
     "legacyMigrationFailed": "Legacy data migration failed: {{message}}",
     "unknown": "Unknown error"
+  },
+  "visual": {
+    "resultSource": "Source: {{mode}}",
+    "historyPlayback": "History playback",
+    "previousConfiguration": "Generate with previous configuration; lock or reroll cards afterward",
+    "nextConfiguration": "Next draw",
+    "filtered": "Filtered records",
+    "ledger": "Mode cumulative statistics (unaffected by history filters)",
+    "pageRange": "{{start}}–{{end}} of {{total}}",
+    "previous": "Previous page",
+    "next": "Next page",
+    "historyActions": "Record actions",
+    "value": "Result",
+    "probability": "Probability",
+    "expected": "Expected per batch",
+    "observed": "Observed"
   }
 }

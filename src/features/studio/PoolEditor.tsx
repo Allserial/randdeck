@@ -212,6 +212,9 @@ export default function PoolEditor({ mode = "custom" }: { mode?: "custom" }) {
       </div>
 
       <div className="virtual-table" ref={scrollRef}>
+        {draft.length === 0 ? (
+          <p className="empty-editor">{t("errors.needNumber")}</p>
+        ) : (
         <div style={{ height: `${virtualizer.getTotalSize()}px`, position: "relative" }}>
           {virtualizer.getVirtualItems().map((item) => {
             const entry = draft[item.index];
@@ -270,6 +273,7 @@ export default function PoolEditor({ mode = "custom" }: { mode?: "custom" }) {
             );
           })}
         </div>
+        )}
       </div>
 
       <div className="editor-footer">
