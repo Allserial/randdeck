@@ -1,25 +1,23 @@
-# 安全策略
+# 安全说明
 
 English version: [SECURITY.md](SECURITY.md)。
 
-## 支持版本
+## 维护版本
 
-当前仅维护最新正式版本。报告问题前，请先确认能在 GitHub Releases 发布的最新 RandDeck 版本中复现。
+目前仅维护 GitHub Releases 上最新发布的正式版本。反馈问题前，建议先用最新版确认问题是否仍然存在。
 
-## 私密报告安全问题
+## 私密反馈安全漏洞
 
-请不要在公开 Issue 中提交漏洞细节、账号信息、令牌、个人数据或可直接利用的复现材料。
+如果发现了安全漏洞，请不要直接在公开 Issue 里贴出漏洞细节、利用步骤或包含个人隐私的文件。
 
-请在仓库的 **Security > Report a vulnerability** 中创建私密安全报告。报告建议包含：
+请打开仓库顶部的 **Security > Report a vulnerability** 提交私密报告，建议附上：
 
-- 受影响的 RandDeck 版本
-- Windows 版本和架构
-- 可复现步骤
-- 影响范围和预期行为
-- 已采取的临时规避措施
+- 使用的 RandDeck 版本号
+- Windows 系统版本
+- 复现步骤与实际表现
 
-普通功能缺陷和界面问题可以在移除隐私信息后使用公开 Issue 报告。
+普通的功能 Bug 或界面细节问题，在隐去个人信息后直接提公开 Issue 即可。
 
-## 隐私边界
+## 本地隐私提醒
 
-RandDeck 设计为离线本地运行。除非已经审查并清理，否则不要附加 `%APPDATA%\com.zhishutai.desktop\state-v5.json`、备份文件、含个人信息的截图、PDB 文件或本地日志。
+RandDeck 全程单机离线运行。提 Issue 或贴截图时，请注意不要顺手上传本机存档文件（`%APPDATA%\com.zhishutai.desktop\state-v5.json`）、含私人名单的备份文件或带本机路径的日志。

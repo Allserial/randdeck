@@ -4,22 +4,20 @@ Chinese version: [SECURITY.zh-CN.md](SECURITY.zh-CN.md).
 
 ## Supported versions
 
-Only the latest stable release is supported. Before reporting an issue, confirm that it can be reproduced with the latest artifact published in GitHub Releases.
+Only the latest release on GitHub Releases is actively maintained. Please verify that the issue still occurs on the latest version before reporting.
 
 ## Reporting a vulnerability privately
 
-Do not publish vulnerability details, credentials, personal data, or directly exploitable reproduction material in a public Issue.
+Please do not post security vulnerabilities, exploit details, or personal data in public GitHub Issues.
 
-Use **Security > Report a vulnerability** in the GitHub repository to submit a private report. Please include:
+Instead, use **Security > Report a vulnerability** on this repository to open a private advisory. Helpful details include:
 
-- affected RandDeck version
-- Windows version and architecture
-- reproducible steps
-- impact and expected behavior
-- temporary mitigations already taken
+- RandDeck version
+- Windows version
+- Steps to reproduce and what happens
 
-Ordinary feature defects and visual issues can be reported through a public Issue after removing private data.
+Regular bugs or UI suggestions can be opened as normal public Issues once any personal data is removed.
 
-## Privacy boundary
+## Local data reminder
 
-RandDeck is designed for offline local operation. Do not attach `%APPDATA%\com.zhishutai.desktop\state-v5.json`, backup files, screenshots containing personal data, PDB files, or local logs unless they have been reviewed and sanitized.
+RandDeck runs offline and stores everything locally. When filing an Issue, avoid attaching your raw state file (`%APPDATA%\com.zhishutai.desktop\state-v5.json`), backups containing private name lists, or unsanitized logs.
