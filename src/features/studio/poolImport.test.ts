@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import Papa from "papaparse";
 import { exportPoolCsv, parsePoolImport } from "./poolImport";
 
 describe("pool file import", () => {
@@ -11,6 +12,39 @@ describe("pool file import", () => {
     expect(restored.map(({ value, tags }) => ({ value, tags }))).toEqual(entries.map(({ value, tags }) => ({ value, tags })));
     expect(restored.map((entry) => entry.value)).toEqual([-3, 42]);
   });
+
+  it("round-trips arbitrary JSON-imported strings through JSON-encoded CSV tags", () => {
+    const source = [
+      { value: 1, tags: ["a|b", "", '["literal JSON"]', '{"key":"value"}', '"quoted"', "line\nnext", "line\r\nnext", "2026", "  "] },
+      { value: 2, tags: [""] },
+      { value: 3, tags: [] },
+    ];
+    const fromJson = parsePoolImport(JSON.stringify(source), "pool.json");
+    const csv = exportPoolCsv(fromJson);
+    const restored = parsePoolImport(csv, "pool.csv");
+    expect(restored.map(({ value, tags }) => ({ value, tags }))).toEqual(source);
+    const rows = Papa.parse<Record<string, string>>(csv, { header: true }).data;
+    expect(JSON.parse(rows[0].标签)).toEqual(source[0].tags);
+    expect(rows[1].标签).toBe('[""]');
+    expect(rows[2].标签).toBe("[]");
+  });
+
+  it("keeps legacy pipe-separated text and numeric labels without creating candidates", () => {
+    const csv = Papa.unparse([
+      ["value", "tags"], ["7", "2026|red|a,b"], ["8", "123"], ["9", ""], ["10", '{"literal":true}'],
+    ]);
+    expect(parsePoolImport(csv, "legacy.csv").map(({ value, tags }) => ({ value, tags }))).toEqual([
+      { value: 7, tags: ["2026", "red", "a,b"] }, { value: 8, tags: ["123"] },
+      { value: 9, tags: [] }, { value: 10, tags: ['{"literal":true}'] },
+    ]);
+  });
+
+  it.each(['[1]', '[null]', '[true]', '[{"label":"red"}]', '[["nested"]]', '["valid",2]', '["broken"'])(
+    "rejects malformed or non-string JSON array tag cells: %s", (tags) => {
+      const csv = Papa.unparse([["value", "tags"], ["1", tags]]);
+      expect(() => parsePoolImport(csv, "invalid.csv")).toThrow(/rowInvalid/);
+    }
+  );
 
   it.each([
     '[{"value":1,"tags":["2026"]}]',

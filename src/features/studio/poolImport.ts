@@ -45,6 +45,15 @@ export function parsePoolImport(text: string, filename: string): PoolEntry[] {
     }
     return Number(cell);
   };
+  const parseTags = (cell: string | undefined, row: number): string[] => {
+    if (!cell) return [];
+    if (!cell.trimStart().startsWith("[")) return cell.split("|");
+    try {
+      const tags: unknown = JSON.parse(cell);
+      if (Array.isArray(tags) && tags.every((tag) => typeof tag === "string")) return tags;
+    } catch { /* Array-shaped cells must contain a valid JSON string array. */ }
+    throw runtimeError("errors.rowInvalid", { row });
+  };
   // Numeric-only CSV is retained for simple pools; tagged files require named columns.
   if (valueColumn < 0) {
     if (!csv.data.every((row) => row.every((cell) => /^[+-]?\d+$/.test(cell.trim())))) throw runtimeError("errors.poolImportFormat");
@@ -54,11 +63,11 @@ export function parsePoolImport(text: string, filename: string): PoolEntry[] {
     if (row.length !== header.length) throw runtimeError("errors.rowInvalid", { row: index + 2 });
     return {
       value: parseValue(row[valueColumn], index + 2),
-      tags: tagsColumn < 0 || !row[tagsColumn] ? [] : row[tagsColumn].split("|"),
+      tags: tagsColumn < 0 ? [] : parseTags(row[tagsColumn], index + 2),
     };
   }));
 }
 
 export function exportPoolCsv(entries: PoolEntry[]): string {
-  return `\uFEFF${Papa.unparse(entries.map((entry) => ({ 数字: entry.value, 标签: entry.tags.join("|") })))}`;
+  return `\uFEFF${Papa.unparse(entries.map((entry) => ({ 数字: entry.value, 标签: JSON.stringify(entry.tags) })))}`;
 }
