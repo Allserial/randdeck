@@ -7,7 +7,7 @@ import { MoreHorizontal } from "lucide-react";
 import { Pager } from "../../components/ui/Pager";
 import { formatProbability } from "./formatProbability";
 import type { DrawMode, ProbabilityReport, ProbabilityRequest } from "../../domain/types";
-import { prepareDraw } from "../../domain/draw";
+import { getCoverageSourceValues, prepareDraw } from "../../domain/draw";
 import { parseDiceExpression } from "../../domain/dice";
 import { coverageForStats } from "../../domain/stats";
 import { analyzeProbability } from "../../platform/probabilityClient";
@@ -27,6 +27,8 @@ export default function InsightsView() {
   const historyEntries = useAppStore((state) => state.history);
   const stats = useAppStore((state) => state.stats);
   const currentMode = useAppStore((state) => state.settings.mode);
+  const coverageSettings = useAppStore((state) => state.settings);
+  const coveragePools = useAppStore((state) => state.pools);
   const tab = useAppStore((state) => state.ui.insightsTab) as Tab;
   const compareIds = useAppStore((state) => state.ui.compareIds);
   const setInsightsTab = useAppStore((state) => state.setInsightsTab);
@@ -99,16 +101,15 @@ export default function InsightsView() {
   const currentStats = stats.byMode[currentMode] || { draws: 0, values: {}, faces: {}, tags: {}, resetAt: null };
   const coverage = useMemo(() => {
     try {
-      const plan = prepareDraw(snapshotState());
       return coverageForStats(
         stats,
         currentMode,
-        plan.candidateEntries.map((entry) => entry.value)
+        getCoverageSourceValues({ ...snapshotState(), settings: coverageSettings, pools: coveragePools })
       );
     } catch {
       return { seen: 0, total: 0, pct: 0, missing: [] };
     }
-  }, [currentMode, stats]);
+  }, [currentMode, stats, coverageSettings, coveragePools]);
 
   const compared = compareIds.map((id) => historyEntries.find((entry) => entry.id === id)).filter(Boolean);
 

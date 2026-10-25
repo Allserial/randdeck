@@ -1,5 +1,5 @@
-param(
-  [string]$Version = "0.7.0"
+﻿param(
+  [string]$Version = "0.7.1"
 )
 
 $ErrorActionPreference = "Stop"
@@ -16,10 +16,11 @@ $packageFiles = @(
   "README.md",
   "README.zh-CN.md",
   "LICENSE.txt",
+  "dependencies-licenses.json",
   "manifest.json"
 )
 
-foreach ($path in @($portable, $manifestPath, $licensePath, (Join-Path $root "README.md"), (Join-Path $root "README.zh-CN.md"))) {
+foreach ($path in @($portable, $manifestPath, $licensePath, (Join-Path $releaseRoot 'dependencies-licenses.json'), (Join-Path $root "README.md"), (Join-Path $root "README.zh-CN.md"))) {
   if (!(Test-Path -LiteralPath $path)) { throw "便携完整包缺少文件：$path" }
 }
 if (Test-Path -LiteralPath $packageDir) { throw "便携完整包目录已存在：$packageDir" }
@@ -30,6 +31,7 @@ Copy-Item -LiteralPath $portable -Destination (Join-Path $packageDir "RandDeck.e
 Copy-Item -LiteralPath (Join-Path $root "README.md") -Destination (Join-Path $packageDir "README.md")
 Copy-Item -LiteralPath (Join-Path $root "README.zh-CN.md") -Destination (Join-Path $packageDir "README.zh-CN.md")
 Copy-Item -LiteralPath $licensePath -Destination (Join-Path $packageDir "LICENSE.txt")
+Copy-Item -LiteralPath (Join-Path $releaseRoot 'dependencies-licenses.json') -Destination (Join-Path $packageDir 'dependencies-licenses.json')
 
 $rootManifest = Get-Content -Raw -LiteralPath $manifestPath -Encoding UTF8 | ConvertFrom-Json
 $packageManifest = [ordered]@{
@@ -42,8 +44,8 @@ $packageManifest = [ordered]@{
 }
 $packageManifest | ConvertTo-Json -Depth 10 | Set-Content -LiteralPath (Join-Path $packageDir "manifest.json") -Encoding UTF8
 
-$checksummedFiles = @("RandDeck.exe", "README.md", "README.zh-CN.md", "LICENSE.txt", "manifest.json")
-$manifestEntryFiles = @("RandDeck.exe", "README.md", "README.zh-CN.md", "LICENSE.txt")
+$checksummedFiles = @("RandDeck.exe", "README.md", "README.zh-CN.md", "LICENSE.txt", "dependencies-licenses.json", "manifest.json")
+$manifestEntryFiles = @("RandDeck.exe", "README.md", "README.zh-CN.md", "LICENSE.txt", "dependencies-licenses.json")
 $checksums = foreach ($name in $checksummedFiles) {
   $path = Join-Path $packageDir $name
   "{0}  {1}" -f (Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash.ToLowerInvariant(), $name
@@ -115,4 +117,5 @@ $artifact = [pscustomobject]@{
 $manifest = Get-Content -Raw -LiteralPath $manifestPath -Encoding UTF8 | ConvertFrom-Json
 $manifest.artifacts = @($manifest.artifacts | Where-Object kind -ne "portable-package-zip") + @($artifact)
 $manifest | ConvertTo-Json -Depth 12 | Set-Content -LiteralPath $manifestPath -Encoding UTF8
+& (Join-Path $PSScriptRoot 'write-release-checksums.ps1') -Version $Version | Out-Null
 $packageManifest | ConvertTo-Json -Depth 10

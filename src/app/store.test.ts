@@ -1,10 +1,11 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import type { AppState } from "../domain/types";
 import { createDefaultState } from "./state";
-import { initializeStore, useAppStore } from "./store";
+import { flushStore, initializeStore, useAppStore } from "./store";
 import { executeDraw, prepareDraw } from "../domain/draw";
 import { SeededRandomSource } from "../domain/random";
 import type { PersistenceAdapter } from "../platform/persistence";
+import { parseRuntimeMessage } from "../domain/runtimeMessage";
 
 class MemoryAdapter implements PersistenceAdapter {
   envelope: { current?: unknown; lastKnownGood?: unknown } | null = null;
@@ -116,6 +117,127 @@ describe("atomic store operations", () => {
     expect(useAppStore.getState().history).toHaveLength(0);
     expect(useAppStore.getState().stats.byMode.range.draws).toBe(0);
     expect(useAppStore.getState().drawState.usedValues).toHaveLength(0);
+  });
+
+  it("does not reverse new statistics or used values when undoing across reset boundaries after reload", async () => {
+    const adapter = new MemoryAdapter();
+    await initializeStore(adapter);
+    useAppStore.getState().updateSettings({ min: 1, max: 1, count: 1, noDup: true });
+    const old = executeDraw(prepareDraw(useAppStore.getState()), new SeededRandomSource(1));
+    useAppStore.getState().commitTransaction(old);
+    useAppStore.getState().resetModeStats("range");
+    useAppStore.getState().resetPool();
+    const current = executeDraw(prepareDraw(useAppStore.getState()), new SeededRandomSource(2));
+    useAppStore.getState().commitTransaction(current);
+    await flushStore();
+    await initializeStore(adapter);
+
+    expect(useAppStore.getState().revertTransaction(old.id)).toBe(true);
+    expect(useAppStore.getState().stats.byMode.range.draws).toBe(1);
+    expect(useAppStore.getState().stats.byMode.range.values).toEqual({ 1: 1 });
+    expect(useAppStore.getState().drawState.usedValues).toEqual([1]);
+    expect(useAppStore.getState().history.map((entry) => entry.transactionId)).toEqual([current.id]);
+    expect(() => prepareDraw(useAppStore.getState())).toThrow();
+    expect(useAppStore.getState().revertTransaction(current.id)).toBe(true);
+    expect(useAppStore.getState().stats.byMode.range.draws).toBe(0);
+    expect(useAppStore.getState().drawState.usedValues).toEqual([]);
+    await flushStore();
+  });
+
+  it("preserves another retained legacy transaction's ownership of a used value", () => {
+    useAppStore.getState().updateSettings({ min: 1, max: 1, count: 1, noDup: true });
+    const old = executeDraw(prepareDraw(useAppStore.getState()), new SeededRandomSource(1));
+    old.createdAt = "2026-01-01T00:00:00.000Z";
+    useAppStore.getState().commitTransaction(old);
+    useAppStore.getState().resetPool();
+    useAppStore.getState().resetModeStats("range");
+    const current = executeDraw(prepareDraw(useAppStore.getState()), new SeededRandomSource(2));
+    current.createdAt = "2026-01-03T00:00:00.000Z";
+    useAppStore.getState().commitTransaction(current);
+    const state = useAppStore.getState();
+    const { poolEpoch: _poolEpoch, ...legacyDrawState } = state.drawState;
+    const { epoch: _epoch, ...legacyBucket } = state.stats.byMode.range;
+    useAppStore.setState({
+      history: state.history.map(({ statsEpoch: _statsEpoch, poolEpoch: _entryPoolEpoch, ...entry }) => entry),
+      drawState: legacyDrawState,
+      stats: { ...state.stats, byMode: { ...state.stats.byMode, range: { ...legacyBucket, resetAt: "2026-01-02T00:00:00.000Z" } } },
+    });
+
+    useAppStore.getState().revertTransaction(old.id);
+    expect(useAppStore.getState().stats.byMode.range.draws).toBe(1);
+    expect(useAppStore.getState().drawState.usedValues).toEqual([1]);
+    useAppStore.getState().revertTransaction(current.id);
+    expect(useAppStore.getState().stats.byMode.range.draws).toBe(0);
+    expect(useAppStore.getState().drawState.usedValues).toEqual([]);
+  });
+
+  it("saves and reloads arbitrary prototype-named labels without losing counts or history", async () => {
+    const adapter = new MemoryAdapter();
+    await initializeStore(adapter);
+    const labels = ["constructor", "toString", "__proto__", "valueOf"];
+    useAppStore.getState().updateSettings({ mode: "custom", count: 1 });
+    useAppStore.getState().updatePools({ customEntries: [{ id: "special", value: 1, tags: labels }] });
+    for (let index = 0; index < 2; index += 1) {
+      useAppStore.getState().commitTransaction(executeDraw(prepareDraw(useAppStore.getState()), new SeededRandomSource(index)));
+    }
+    await flushStore();
+    const saved = JSON.parse(JSON.stringify(adapter.envelope));
+    labels.forEach((label) => expect(saved.current.stats.byMode.custom.tags[label]).toBe(2));
+    adapter.envelope = saved;
+    await initializeStore(adapter);
+    labels.forEach((label) => {
+      expect(Object.hasOwn(useAppStore.getState().stats.byMode.custom.tags, label)).toBe(true);
+      expect(useAppStore.getState().stats.byMode.custom.tags[label]).toBe(2);
+      expect(useAppStore.getState().history[0].statsDelta?.tags[label]).toBe(1);
+    });
+    expect(useAppStore.getState().history).toHaveLength(2);
+    expect(useAppStore.getState().error).toBe("");
+  });
+
+  it("serializes an in-flight save before flushing the latest snapshot", async () => {
+    class DelayedAdapter extends MemoryAdapter {
+      release: (() => void) | null = null;
+      started: (() => void) | null = null;
+      blockNext = false;
+      async save(value: { current?: unknown; lastKnownGood?: unknown }) {
+        if (this.blockNext) {
+          this.blockNext = false;
+          await new Promise<void>((resolve) => { this.release = resolve; this.started?.(); });
+        }
+        await super.save(value);
+      }
+    }
+    const adapter = new DelayedAdapter();
+    await initializeStore(adapter);
+    adapter.blockNext = true;
+    const started = new Promise<void>((resolve) => { adapter.started = resolve; });
+    useAppStore.getState().updateSettings({ max: 12 });
+    const oldSave = flushStore();
+    await started;
+    useAppStore.getState().updateSettings({ max: 99 });
+    const latestSave = flushStore();
+    adapter.release!();
+    await Promise.all([oldSave, latestSave]);
+    expect((adapter.envelope?.current as AppState).settings.max).toBe(99);
+  });
+
+  it("exposes save failures and allows the next queued save to recover", async () => {
+    class FailingAdapter extends MemoryAdapter {
+      failNext = false;
+      async save(value: { current?: unknown; lastKnownGood?: unknown }) {
+        if (this.failNext) { this.failNext = false; throw new Error("disk unavailable"); }
+        await super.save(value);
+      }
+    }
+    const adapter = new FailingAdapter();
+    await initializeStore(adapter);
+    adapter.failNext = true;
+    useAppStore.getState().updateSettings({ max: 12 });
+    await expect(flushStore()).rejects.toThrow("disk unavailable");
+    expect(parseRuntimeMessage(useAppStore.getState().error)).toMatchObject({ key: "errors.localSave", params: { message: "disk unavailable" } });
+    useAppStore.getState().updateSettings({ max: 99 });
+    await flushStore();
+    expect((adapter.envelope?.current as AppState).settings.max).toBe(99);
   });
 
   it("allows draw settings to change because sessions no longer lock the inspector", () => {

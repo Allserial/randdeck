@@ -1469,7 +1469,8 @@ textarea::-webkit-scrollbar-corner {
   min-height: 180px;
   height: 180px;
 }
-.result-grid.cols-5 .result-tile.result-tile--expression {
+.result-grid.cols-5 .result-tile.result-tile--expression,
+.result-grid.cols-auto .result-tile.result-tile--expression {
   min-height: 164px;
   height: 164px;
 }
@@ -1478,9 +1479,14 @@ textarea::-webkit-scrollbar-corner {
   height: 26px;
 }
 .result-grid.cols-3 .result-tile--expression .die-face.is-compact,
-.result-grid.cols-5 .result-tile--expression .die-face.is-compact {
+.result-grid.cols-5 .result-tile--expression .die-face.is-compact,
+.result-grid.cols-auto .result-tile--expression .die-face.is-compact {
   width: 22px;
   height: 22px;
+}
+.result-grid.cols-auto .result-tile--expression .result-value {
+  min-height: 30px;
+  flex-shrink: 0;
 }
 .result-board.result-board--expression.cols-1 { --number-size: 66; }
 .result-board.result-board--expression.cols-2 { --number-size: 48; }
@@ -1911,6 +1917,7 @@ textarea::-webkit-scrollbar-corner {
   .result-grid.cols-2 .result-tile.result-tile--expression,
   .result-grid.cols-3 .result-tile.result-tile--expression { min-height: 146px; height: 146px; }
   .result-grid.cols-5 .result-tile.result-tile--expression { min-height: 140px; height: 140px; }
+  .result-grid.cols-auto .result-tile.result-tile--expression { min-height: 152px; height: 152px; }
   .result-board.cols-1 { --number-size: 62; }
   .result-board.cols-2,
   .result-board.cols-3 { --number-size: 42; }
@@ -1975,6 +1982,7 @@ textarea::-webkit-scrollbar-corner {
   .result-grid.cols-2 .result-tile.result-tile--expression,
   .result-grid.cols-3 .result-tile.result-tile--expression,
   .result-grid.cols-5 .result-tile.result-tile--expression { min-height: 102px; height: 102px; padding: 3px 5px; }
+  .result-grid.cols-auto .result-tile.result-tile--expression { min-height: 124px; height: 124px; padding: 3px 5px; }
   .result-board.cols-1 { --number-size: 48; }
   .result-board.cols-2,
   .result-board.cols-3 { --number-size: 28; }
@@ -2032,9 +2040,11 @@ textarea::-webkit-scrollbar-corner {
   .result-grid.cols-2 .result-tile.result-tile--expression,
   .result-grid.cols-3 .result-tile.result-tile--expression,
   .result-grid.cols-5 .result-tile.result-tile--expression { min-height: 100px; height: 100px; }
+  .result-grid.cols-auto .result-tile.result-tile--expression { min-height: 124px; height: 124px; }
   .result-grid.cols-2 .result-tile.result-tile--expression:not(:has(.die-row)),
   .result-grid.cols-3 .result-tile.result-tile--expression:not(:has(.die-row)),
-  .result-grid.cols-5 .result-tile.result-tile--expression:not(:has(.die-row)) { min-height: 90px; height: 90px; }
+  .result-grid.cols-5 .result-tile.result-tile--expression:not(:has(.die-row)),
+  .result-grid.cols-auto .result-tile.result-tile--expression:not(:has(.die-row)) { min-height: 90px; height: 90px; }
   .result-board.cols-2,
   .result-board.cols-3,
   .result-board.cols-5,

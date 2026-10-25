@@ -13,6 +13,15 @@ pub fn run() {
         .plugin(tauri_plugin_window_state::Builder::default().build())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
+        .on_window_event(|window, event| {
+            use tauri::Manager;
+            // The main WebView flushes its state before destroying itself. Do not
+            // leave a display-only process that the single-instance callback
+            // cannot restore after the main window has gone away.
+            if window.label() == "main" && matches!(event, tauri::WindowEvent::Destroyed) {
+                window.app_handle().exit(0);
+            }
+        })
         .setup(|app| {
             use tauri::Manager;
             if let Some(window) = app.get_webview_window("main") {

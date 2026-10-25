@@ -78,4 +78,20 @@ describe("DrawInspector", () => {
     expect(screen.getByRole("textbox", { name: "排除数字" })).toHaveFocus();
     expect(screen.queryByRole("button", { name: "清空排除规则" })).toBeNull();
   });
+
+  it("does not commit an escaped edit when the focused input blurs", () => {
+    render(<DrawInspector />);
+    const input = screen.getByRole("textbox", { name: "生成数量" });
+    input.focus();
+    fireEvent.change(input, { target: { value: "12" } });
+    fireEvent.keyDown(input, { key: "Escape" });
+    expect(input).not.toHaveFocus();
+    expect(input).toHaveValue("5");
+    expect(useAppStore.getState().settings.count).toBe(5);
+
+    input.focus();
+    fireEvent.change(input, { target: { value: "8" } });
+    fireEvent.blur(input);
+    expect(useAppStore.getState().settings.count).toBe(8);
+  });
 });

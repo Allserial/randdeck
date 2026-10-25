@@ -1,5 +1,5 @@
-param(
-  [string]$Version = "0.7.0"
+﻿param(
+  [string]$Version = "0.7.1"
 )
 
 $ErrorActionPreference = "Stop"
@@ -39,4 +39,5 @@ $postBuild = [pscustomobject]@{
 $manifest | Add-Member -NotePropertyName finalizedAt -NotePropertyValue (Get-Date).ToUniversalTime().ToString("o") -Force
 $manifest | Add-Member -NotePropertyName postBuildVerification -NotePropertyValue $postBuild -Force
 $manifest | ConvertTo-Json -Depth 12 | Set-Content -LiteralPath $manifestPath -Encoding UTF8
+& (Join-Path $PSScriptRoot 'write-release-checksums.ps1') -Version $Version | Out-Null
 $manifest | ConvertTo-Json -Depth 12

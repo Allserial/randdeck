@@ -1,7 +1,7 @@
 import { z } from "zod";
-import type { AppLocale, AppState, CountByMode, CountMemoryMode, DrawMode, DrawResult, DrawSession, DrawSettings, HistoryEntry, PoolEntry, PoolsState, Preset, UiState } from "../domain/types";
+import type { AppLocale, AppState, CountByMode, CountMemoryMode, DrawMode, DrawOperation, DrawResult, DrawSession, DrawSettings, HistoryEntry, PoolEntry, PoolsState, Preset, UiState } from "../domain/types";
 import { createId, parseIntegerList } from "../domain/random";
-import { createEmptyStats, normalizeStats } from "../domain/stats";
+import { createEmptyStats, normalizeStats, normalizeStatsDelta } from "../domain/stats";
 import { normalizeTagRules } from "../domain/tags";
 import { normalizeWeightedEntries } from "../domain/weighted";
 import { detectLocaleFromLanguages, normalizePersistedLocale } from "../i18n/locale";
@@ -82,7 +82,12 @@ export function createDefaultState(locale: AppLocale = detectFreshStateLocale())
   };
 }
 
-const StringNumberMap = z.record(z.string(), z.number().nonnegative());
+// z.record intentionally drops __proto__; statistics labels must preserve it
+// through validation and JSON save/restore just like every other text label.
+const StringNumberMap = z.custom<Record<string, number>>((value) =>
+  value !== null && typeof value === "object" && !Array.isArray(value)
+  && Object.values(value).every((count) => typeof count === "number" && Number.isFinite(count) && count >= 0)
+);
 const ResultSchema = z.object({
   value: z.number(),
   total: z.number(),
@@ -142,6 +147,7 @@ const StatsSchema = z.object({
     faces: StringNumberMap,
     tags: StringNumberMap,
     resetAt: z.string().nullable(),
+    epoch: z.string().optional(),
   })),
 });
 const StatsDeltaSchema = z.object({
@@ -168,6 +174,8 @@ const HistorySchema = z.object({
   statsDelta: StatsDeltaSchema.optional(),
   poolFingerprint: z.string().optional(),
   usedAdded: z.array(z.number()).optional(),
+  statsEpoch: z.string().optional(),
+  poolEpoch: z.string().optional(),
   receipt: z.unknown().optional(),
   sessionId: z.string().optional(),
   presetId: z.string().optional(),
@@ -181,6 +189,8 @@ const SessionTransactionSchema = z.object({
   statsDelta: StatsDeltaSchema,
   poolFingerprint: z.string(),
   usedAdded: z.array(z.number().int()),
+  statsEpoch: z.string().optional(),
+  poolEpoch: z.string().optional(),
   receipt: z.unknown().optional(),
 });
 const SessionSchema = z.object({
@@ -206,6 +216,7 @@ export const AppStateV5Schema = z.object({
   pinnedPresetIds: z.array(z.string()).max(6),
   drawState: z.object({
     poolFingerprint: z.string(),
+    poolEpoch: z.string().optional(),
     usedValues: z.array(z.number().int()),
     lastTransactionId: z.string().nullable(),
     activePresetId: z.string().nullable(),
@@ -382,6 +393,19 @@ function normalizeResult(value: unknown): DrawResult | null {
   };
 }
 
+function normalizeRecordDelta(value: unknown, results: DrawResult[], operation?: DrawOperation) {
+  const delta = normalizeStatsDelta(value);
+  if (!delta) return undefined;
+  const reserved = new Set(Object.getOwnPropertyNames(Object.prototype));
+  const countedResults = operation?.kind === "reroll"
+    ? operation.rerolledIndices.map((index) => results[index]).filter(Boolean)
+    : results;
+  const counts = new Map<string, number>();
+  countedResults.forEach((result) => result.tags.filter((tag) => reserved.has(tag)).forEach((tag) => counts.set(tag, (counts.get(tag) || 0) + 1)));
+  counts.forEach((count, tag) => Object.defineProperty(delta.tags, tag, { value: count, enumerable: true, configurable: true, writable: true }));
+  return delta;
+}
+
 function normalizeHistory(value: unknown): HistoryEntry[] {
   if (!Array.isArray(value)) return [];
   return value
@@ -406,9 +430,11 @@ function normalizeHistory(value: unknown): HistoryEntry[] {
           config: normalizeSettings(entry.config),
           results,
           operation: entry.operation,
-          statsDelta: entry.statsDelta,
+          statsDelta: normalizeRecordDelta(entry.statsDelta, results, entry.operation),
           poolFingerprint: entry.poolFingerprint,
           usedAdded: Array.isArray(entry.usedAdded) ? entry.usedAdded.filter(Number.isSafeInteger) : undefined,
+          statsEpoch: typeof entry.statsEpoch === "string" ? entry.statsEpoch : undefined,
+          poolEpoch: typeof entry.poolEpoch === "string" ? entry.poolEpoch : undefined,
           receipt: entry.receipt,
           sessionId: entry.sessionId,
           presetId: entry.presetId,
@@ -469,9 +495,11 @@ function normalizeSession(value: unknown): DrawSession | null {
           createdAt: String(r.createdAt || ""),
           results: (Array.isArray(r.results) ? r.results : []).map(normalizeResult).filter((res: DrawResult | null): res is DrawResult => Boolean(res)),
           operation: r.operation || { kind: "draw" },
-          statsDelta: r.statsDelta || { mode: "range", draws: 0, values: {}, faces: {}, tags: {} },
+          statsDelta: normalizeStatsDelta(r.statsDelta) || { mode: "range", draws: 0, values: {}, faces: {}, tags: {} },
           poolFingerprint: String(r.poolFingerprint || ""),
           usedAdded: Array.isArray(r.usedAdded) ? r.usedAdded.filter(Number.isSafeInteger) : [],
+          statsEpoch: typeof r.statsEpoch === "string" ? r.statsEpoch : undefined,
+          poolEpoch: typeof r.poolEpoch === "string" ? r.poolEpoch : undefined,
           receipt: r.receipt,
         }))
       : [],
@@ -490,6 +518,49 @@ function liftNotes(source: Record<string, any>, sourceLabel: string, fromVersion
   return [...new Set(notes)];
 }
 
+function restorePrototypeTagCounts(state: AppState): AppState {
+  // Pre-fix versions silently dropped these labels from aggregate statistics.
+  // Recover evidence retained in history/session records without lowering counts
+  // that may also include transactions no longer retained by the history limit.
+  state = {
+    ...state,
+    stats: structuredClone(state.stats),
+    history: state.history.map((entry) => ({ ...entry, statsDelta: normalizeRecordDelta(entry.statsDelta, entry.results, entry.operation) })),
+    sessionArchive: state.sessionArchive.map((session) => ({
+      ...session,
+      transactionRecords: session.transactionRecords.map((record) => ({ ...record, statsDelta: normalizeRecordDelta(record.statsDelta, record.results, record.operation)! })),
+    })),
+  };
+  const reserved = new Set(Object.getOwnPropertyNames(Object.prototype));
+  const counts = new Map<DrawMode, Map<string, number>>();
+  const seen = new Set<string>();
+  const entries = [
+    ...state.history.map((entry) => ({ ...entry, recordId: entry.transactionId || entry.id })),
+    ...state.sessionArchive.flatMap((session) => session.transactionRecords.map((record) => ({
+      ...record, mode: record.statsDelta.mode, recordId: record.id,
+    }))),
+  ];
+  entries.forEach((entry) => {
+    if (seen.has(entry.recordId)) return;
+    seen.add(entry.recordId);
+    const bucket = state.stats.byMode[entry.mode];
+    const sameEpoch = entry.statsEpoch !== undefined
+      ? entry.statsEpoch === (bucket.epoch || "legacy")
+      : !bucket.epoch && (!bucket.resetAt || Date.parse(entry.createdAt || "") >= Date.parse(bucket.resetAt));
+    if (!sameEpoch) return;
+    const modeCounts = counts.get(entry.mode) || new Map<string, number>();
+    Object.entries(entry.statsDelta?.tags || {}).filter(([tag]) => reserved.has(tag)).forEach(([tag, count]) => modeCounts.set(tag, (modeCounts.get(tag) || 0) + count));
+    counts.set(entry.mode, modeCounts);
+  });
+  counts.forEach((modeCounts, mode) => modeCounts.forEach((count, tag) => {
+    const tags = state.stats.byMode[mode].tags;
+    if (!Object.hasOwn(tags, tag) || tags[tag] < count) {
+      Object.defineProperty(tags, tag, { value: count, enumerable: true, configurable: true, writable: true });
+    }
+  }));
+  return state;
+}
+
 export function migrateToV5(value: unknown, sourceLabel = "未知来源"): AppState {
   const source = value && typeof value === "object" ? (value as Record<string, any>) : {};
   const version = Number(source.version);
@@ -503,12 +574,12 @@ export function migrateToV5(value: unknown, sourceLabel = "未知来源"): AppSt
       const migrationNotes = weightedMode
         ? [...new Set([...state.migrationNotes, "加权模式已停用，已自动切换为自定义数字池"])]
         : state.migrationNotes;
-      return {
+      return restorePrototypeTagCounts({
         ...state,
         settings: { ...state.settings, mode: weightedMode ? "custom" : state.settings.mode, count: state.ui.countByMode[mode] },
         pools: weightedMode ? normalizePools(state.pools) : state.pools,
         migrationNotes,
-      };
+      });
     }
   }
   if (![1, 2, 3, 4, 5].includes(version)) throw runtimeError("errors.unsupportedVersion");
@@ -533,6 +604,7 @@ export function migrateToV5(value: unknown, sourceLabel = "未知来源"): AppSt
   next.pinnedPresetIds = Array.isArray(source.pinnedPresetIds) ? source.pinnedPresetIds.map(String).slice(0, 6) : [];
   next.drawState = {
     poolFingerprint: typeof source.drawState?.poolFingerprint === "string" ? source.drawState.poolFingerprint : "",
+    poolEpoch: typeof source.drawState?.poolEpoch === "string" ? source.drawState.poolEpoch : undefined,
     usedValues: version >= 3 && Array.isArray(source.drawState?.usedValues) ? source.drawState.usedValues.filter(Number.isSafeInteger) : [],
     lastTransactionId: typeof source.drawState?.lastTransactionId === "string" ? source.drawState.lastTransactionId : null,
     activePresetId: typeof source.drawState?.activePresetId === "string" ? source.drawState.activePresetId : null,
@@ -558,7 +630,7 @@ export function migrateToV5(value: unknown, sourceLabel = "未知来源"): AppSt
   if (!parsed.success) throw runtimeError("errors.validationFailed", {
     message: parsed.error.issues[0]?.message || createRuntimeMessage("errors.unknown"),
   });
-  return parsed.data as AppState;
+  return restorePrototypeTagCounts(parsed.data as AppState);
 }
 
 export function migrateToV4(value: unknown, sourceLabel = "未知来源"): AppState {

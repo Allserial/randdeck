@@ -6,7 +6,7 @@ import clsx from "clsx";
 import type { AppView } from "../domain/types";
 import { cancelCeremony, finishCeremonyToNormal, generateDraw, skipCeremonyReveal, startCountdownCeremony } from "./drawController";
 import { flushStore, useAppStore } from "./store";
-import { applyWindowMaterial, listenDisplayReady, openDisplayWindow, setApplicationWindowTitle } from "../platform/desktop";
+import { applyWindowMaterial, listenDisplayReady, listenMainWindowClose, openDisplayWindow, setApplicationWindowTitle } from "../platform/desktop";
 import { publishCurrentDisplay } from "./drawController";
 import { ErrorBoundary } from "../components/ui/ErrorBoundary";
 import { IconButton } from "../components/ui/Button";
@@ -51,12 +51,12 @@ export default function AppShell() {
 
   useEffect(() => {
     if (hydrated) void publishCurrentDisplay();
-  }, [hydrated, resultPresentation, currentResults, settings.appearance.theme, ui.locale]);
+  }, [hydrated, resultPresentation, currentResults, settings.appearance.theme, settings.appearance.motion, settings.appearance.particles, settings.desktop.displayMode, ui.locale]);
 
   const showDisplay = useCallback(async () => {
     const state = useAppStore.getState();
     try {
-      await openDisplayWindow(state.settings.desktop.displayMode);
+      await openDisplayWindow(state.settings.desktop.displayMode, state.settings.desktop.displayClickThrough);
       await publishCurrentDisplay();
     } catch (displayError) {
       state.setError((displayError as Error).message);
@@ -80,12 +80,32 @@ export default function AppShell() {
 
   useEffect(() => {
     let dispose: () => void = () => undefined;
+    let cancelled = false;
     listenDisplayReady(() => {
       void publishCurrentDisplay();
     }).then((cleanup) => {
-      dispose = cleanup;
+      if (cancelled) cleanup();
+      else dispose = cleanup;
     });
-    return () => dispose();
+    return () => {
+      cancelled = true;
+      dispose();
+    };
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    let dispose: () => void = () => undefined;
+    listenMainWindowClose(flushStore, (error) => {
+      useAppStore.getState().setError((error as Error).message);
+    }).then((cleanup) => {
+      if (cancelled) cleanup();
+      else dispose = cleanup;
+    }).catch((error: Error) => useAppStore.getState().setError(error.message));
+    return () => {
+      cancelled = true;
+      dispose();
+    };
   }, []);
 
   // 快捷键只作用于抽取台，且不抢占表单、导航和对话框控件的输入。
@@ -99,7 +119,7 @@ export default function AppShell() {
       const ceremony = state.ceremony;
       if (event.key === "Escape") {
         if (event.defaultPrevented || inDialog) return;
-        if (ceremony.phase === "countdown" || ceremony.phase === "revealing") {
+        if (ceremony.phase === "countdown" || ceremony.phase === "revealing" || (state.isDrawing && state.settings.appearance.motion === "ceremony")) {
           event.preventDefault();
           cancelCeremony();
           return;

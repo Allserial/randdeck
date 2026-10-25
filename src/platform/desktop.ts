@@ -1,4 +1,4 @@
-import type { AppLocale, CeremonyPhase, DrawMode, DrawResult, ThemeMode } from "../domain/types";
+import type { AppearanceSettings, AppLocale, CeremonyPhase, DesktopSettings, DrawMode, DrawResult, ThemeMode } from "../domain/types";
 import type { ResultPresentationContext } from "../app/resultPresentation";
 import { isTauriRuntime } from "./persistence";
 
@@ -10,6 +10,8 @@ export interface DisplayPayload {
   locale: AppLocale;
   summary: string;
   theme: ThemeMode;
+  appearance?: Pick<AppearanceSettings, "motion" | "particles">;
+  windowMode?: DesktopSettings["displayMode"];
   animationToken: string;
   ceremony?: {
     phase: CeremonyPhase;
@@ -42,7 +44,7 @@ export async function applyWindowMaterial(theme: ThemeMode): Promise<void> {
   }
 }
 
-export async function openDisplayWindow(mode: "normal" | "fullscreen" | "overlay"): Promise<void> {
+export async function openDisplayWindow(mode: DesktopSettings["displayMode"], clickThrough = false): Promise<void> {
   if (!isTauriRuntime()) {
     window.open(`${location.origin}${location.pathname}?view=display`, "zhishutai-display", "width=1280,height=720");
     return;
@@ -66,9 +68,39 @@ export async function openDisplayWindow(mode: "normal" | "fullscreen" | "overlay
       display!.once("tauri://error", (event) => reject(new Error(String(event.payload))));
     });
   }
-  await setDisplayWindowMode(mode, false);
+  await setDisplayWindowMode(mode, clickThrough);
   await display.show();
   await display.setFocus();
+}
+
+// A main-window close must finish its latest save before destroying the WebView.
+// Rust ends the application when that window is destroyed, including any display.
+export async function listenMainWindowClose(
+  flush: () => Promise<void>,
+  onError: (error: unknown) => void,
+): Promise<() => void> {
+  if (!isTauriRuntime()) return () => undefined;
+  const { getCurrentWindow } = await import("@tauri-apps/api/window");
+  const main = getCurrentWindow();
+  let closing = false;
+  return main.onCloseRequested(async (event) => {
+    event.preventDefault();
+    if (closing) return;
+    closing = true;
+    try {
+      await flush();
+      await main.destroy();
+    } catch (error) {
+      closing = false;
+      onError(error);
+    }
+  });
+}
+
+export async function startDisplayWindowDrag(): Promise<void> {
+  if (!isTauriRuntime()) return;
+  const { getCurrentWindow } = await import("@tauri-apps/api/window");
+  await getCurrentWindow().startDragging();
 }
 
 export async function setApplicationWindowTitle(locale: AppLocale): Promise<void> {
@@ -154,7 +186,6 @@ export async function listenDisplayState(callback: (payload: DisplayPayload) => 
   channel.addEventListener("message", listener);
   channel.postMessage({ type: "ready" } satisfies BrowserDisplayMessage);
   return () => {
-    channel.postMessage({ type: "close" } satisfies BrowserDisplayMessage);
     channel.removeEventListener("message", listener);
     channel.close();
   };

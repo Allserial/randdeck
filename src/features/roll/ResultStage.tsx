@@ -42,6 +42,7 @@ export default function ResultStage() {
   const [sort, setSort] = useState<"original" | "asc" | "desc">("original");
   const [noteDialogOpen, setNoteDialogOpen] = useState(false);
   const [noteText, setNoteText] = useState("");
+  const [noteEntryId, setNoteEntryId] = useState<string | null>(null);
 
   const stageContentRef = useRef<HTMLDivElement>(null);
   const cardRefs = useRef<(HTMLElement | null)[]>([]);
@@ -50,6 +51,7 @@ export default function ResultStage() {
 
   const handleOpenNoteDialog = () => {
     if (latest) {
+      setNoteEntryId(latest.id);
       setNoteText(latest.note || "");
       setNoteDialogOpen(true);
     }
@@ -102,7 +104,12 @@ export default function ResultStage() {
         );
   }, [displayResults, sort]);
 
-  const latest = history.find((entry) => entry.transactionId && entry.transactionId === transactionId) || history[0];
+  const latest = history.find((entry) => entry.transactionId && entry.transactionId === presentation?.transactionId);
+  const noteEntry = history.find((entry) => entry.id === noteEntryId);
+  const saveNote = () => {
+    if (noteEntry) updateHistoryNote(noteEntry.id, noteText);
+    setNoteDialogOpen(false);
+  };
 
   const rerollIndices = useMemo(() => {
     if (selected.size) return [...selected].filter((index) => !pinned.has(index));
@@ -376,7 +383,7 @@ export default function ResultStage() {
       <Dialog
         open={noteDialogOpen}
         onOpenChange={setNoteDialogOpen}
-        title={latest?.note ? t("roll.editNote") : t("roll.addNote")}
+        title={noteEntry?.note ? t("roll.editNote") : t("roll.addNote")}
         footer={
           <>
             <Button variant="quiet" onClick={() => setNoteDialogOpen(false)}>
@@ -384,12 +391,8 @@ export default function ResultStage() {
             </Button>
             <Button
               variant="primary"
-              onClick={() => {
-                if (latest) {
-                  updateHistoryNote(latest.id, noteText);
-                  setNoteDialogOpen(false);
-                }
-              }}
+              disabled={!noteEntry}
+              onClick={saveNote}
             >
               {t("common.actions.save")}
             </Button>
@@ -399,10 +402,7 @@ export default function ResultStage() {
         <form
           onSubmit={(e) => {
             e.preventDefault();
-            if (latest) {
-              updateHistoryNote(latest.id, noteText);
-              setNoteDialogOpen(false);
-            }
+            saveNote();
           }}
         >
           <input

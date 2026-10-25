@@ -1,8 +1,8 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { Dices, Sparkles, X } from "lucide-react";
+import { Dices, Move, Sparkles, X } from "lucide-react";
 import clsx from "clsx";
-import { closeCurrentDisplayWindow, listenDisplayState, setDisplayWindowTitle, type DisplayPayload } from "../../platform/desktop";
+import { closeCurrentDisplayWindow, listenDisplayState, setDisplayWindowTitle, startDisplayWindowDrag, type DisplayPayload } from "../../platform/desktop";
 import { ResultBoard, StageAstrolabe } from "../roll/ResultVisual";
 import { BurstParticles, type BurstOrigin } from "../fx/BurstParticles";
 import type { DrawMode } from "../../domain/types";
@@ -35,19 +35,26 @@ export default function DisplayView() {
   }, [payload?.locale]);
 
   useEffect(() => {
+    let cancelled = false;
     let dispose: () => void = () => undefined;
-    listenDisplayState(setPayload).then((cleanup) => {
-      dispose = cleanup;
+    listenDisplayState((nextPayload) => {
+      setPayload(nextPayload);
+      if (nextPayload.windowMode) setWindowMode(nextPayload.windowMode);
+    }).then((cleanup) => {
+      if (cancelled) cleanup();
+      else dispose = cleanup;
     });
     let disposeMode: () => void = () => undefined;
     if (window.__TAURI_INTERNALS__) {
       import("@tauri-apps/api/event").then(({ listen }) =>
         listen<{ mode: typeof windowMode }>("display://mode", (event) => setWindowMode(event.payload.mode))
       ).then((cleanup) => {
-        disposeMode = cleanup;
+        if (cancelled) cleanup();
+        else disposeMode = cleanup;
       });
     }
     return () => {
+      cancelled = true;
       dispose();
       disposeMode();
     };
@@ -55,9 +62,10 @@ export default function DisplayView() {
 
   useEffect(() => {
     document.documentElement.dataset.theme = payload?.theme || "dark";
+    document.documentElement.dataset.motion = payload?.appearance?.motion || "instant";
     document.body.classList.add("display-body");
     return () => document.body.classList.remove("display-body");
-  }, [payload?.theme]);
+  }, [payload?.theme, payload?.appearance?.motion]);
 
   useEffect(() => {
     const closeOnEscape = (event: KeyboardEvent) => {
@@ -69,6 +77,11 @@ export default function DisplayView() {
 
   const ceremony = payload?.ceremony;
   const isCeremonyActive = Boolean(ceremony && ceremony.phase !== "idle");
+  const appearance = {
+    theme: payload?.theme || "dark",
+    motion: payload?.appearance?.motion || "instant",
+    particles: payload?.appearance?.particles ?? false,
+  } as const;
 
   // 展示窗单张揭晓时，异步测量卡片中心坐标并触发单张礼花 (Item 3)
   useLayoutEffect(() => {
@@ -99,9 +112,19 @@ export default function DisplayView() {
 
   return (
     <main className={clsx("display-view", `display-view--${windowMode}`, payload && "has-result")}>
-      <div className="display-brand">
+      <div
+        className="display-brand"
+        title={windowMode === "normal" ? t("display.dragWindow") : undefined}
+        style={{ cursor: windowMode === "normal" ? "grab" : undefined, userSelect: "none", zIndex: 30 }}
+        onMouseDown={(event) => {
+          if (windowMode !== "normal" || event.button !== 0) return;
+          event.preventDefault();
+          void startDisplayWindowDrag();
+        }}
+      >
         <BrandMark size={28} title={t("app.about")} />
         <span>{t("app.brand")} · {t("app.display")}</span>
+        {windowMode === "normal" && <Move size={14} aria-hidden="true" />}
       </div>
       <button
         type="button"
@@ -121,6 +144,7 @@ export default function DisplayView() {
             active={ceremony.phase === "finished"}
             token={`display-${ceremony.phase}`}
             fullscreen={true}
+            appearance={appearance}
           />
           {ceremony.phase === "countdown" && (
             <div className="ceremony-countdown-hero">
@@ -145,6 +169,7 @@ export default function DisplayView() {
               }
               token={singleBurstToken}
               origin={singleBurstOrigin}
+              appearance={appearance}
             />
             <div className="display-results" key={payload?.animationToken}>
               <ResultBoard

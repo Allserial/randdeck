@@ -23,8 +23,8 @@ English documentation: [README.md](README.md)。
 前往 [GitHub Releases](https://github.com/Allserial/randdeck/releases) 下载最新版：
 
 - `RandDeck.exe`：单文件便携版，双击即用（电脑需自带 Microsoft Edge WebView2 Runtime，Windows 11 默认已内置）。
-- `RandDeck-v0.7.0-portable.zip`：完整便携包，解压后使用，内含中英文说明、许可证、文件清单和 SHA256 校验值。
-- `RandDeck-v0.7.0-offline-setup.exe`：离线安装包，自带 WebView2 离线运行库，支持从旧版直接覆盖升级并保留本机数据。
+- `RandDeck-v0.7.1-portable.zip`：完整便携包，解压后使用，内含中英文说明、项目及依赖许可证清单、文件清单和 SHA256 校验值。
+- `RandDeck-v0.7.1-offline-setup.exe`：离线安装包，自带 WebView2 离线运行库，支持从旧版直接覆盖升级并保留本机数据。
 
 当前版本未购买商业代码签名证书，Windows SmartScreen 可能会提示“未知发布者”。运行前请核对发布页提供的 SHA256 校验值。
 

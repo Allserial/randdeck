@@ -1,4 +1,5 @@
 import type { DrawMode, DrawResult, StatsBucket, StatsDelta, StatsState } from "./types";
+import { createId } from "./random";
 
 export const STAT_MODES: DrawMode[] = ["range", "custom", "weighted", "expression"];
 
@@ -12,7 +13,28 @@ export function createEmptyStats(): StatsState {
 
 function increment(map: Record<string, number>, key: unknown, amount = 1): void {
   const label = String(key);
-  map[label] = (map[label] || 0) + amount;
+  setCount(map, label, ownCount(map, label) + amount);
+}
+
+function ownCount(map: Record<string, number>, key: string): number {
+  return Object.hasOwn(map, key) && Number.isFinite(map[key]) ? map[key] : 0;
+}
+
+function setCount(map: Record<string, number>, key: string, value: number): void {
+  // Assignment to __proto__ invokes a setter on ordinary objects. Explicitly
+  // define a data property so every user supplied label has identical semantics.
+  Object.defineProperty(map, key, { value, enumerable: true, configurable: true, writable: true });
+}
+
+function normalizeCountMap(value: unknown): Record<string, number> {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return {};
+  return Object.fromEntries(Object.entries(value).flatMap(([key, raw]) => {
+    if (typeof raw === "number" && Number.isFinite(raw) && raw >= 0) return [[key, raw]];
+    // Older versions concatenated 1 onto inherited native methods for labels
+    // such as constructor and toString. Each trailing 1 represents one hit.
+    const inheritedHits = typeof raw === "string" ? /^function [\s\S]*\{\s*\[native code\]\s*\}(1+)$/.exec(raw) : null;
+    return inheritedHits ? [[key, inheritedHits[1].length]] : [];
+  }));
 }
 
 export function createStatsDelta(mode: DrawMode, results: DrawResult[]): StatsDelta {
@@ -25,10 +47,23 @@ export function createStatsDelta(mode: DrawMode, results: DrawResult[]): StatsDe
   return delta;
 }
 
+export function normalizeStatsDelta(value: unknown): StatsDelta | undefined {
+  if (!value || typeof value !== "object") return undefined;
+  const source = value as Partial<StatsDelta>;
+  if (!STAT_MODES.includes(source.mode as DrawMode)) return undefined;
+  return {
+    mode: source.mode as DrawMode,
+    draws: typeof source.draws === "number" && Number.isFinite(source.draws) ? Math.max(0, source.draws) : 0,
+    values: normalizeCountMap(source.values),
+    faces: normalizeCountMap(source.faces),
+    tags: normalizeCountMap(source.tags),
+  };
+}
+
 function applyMap(target: Record<string, number>, delta: Record<string, number>, direction: 1 | -1): void {
   Object.entries(delta).forEach(([key, amount]) => {
-    const value = Math.max(0, (target[key] || 0) + amount * direction);
-    if (value) target[key] = value; else delete target[key];
+    const value = Math.max(0, ownCount(target, key) + amount * direction);
+    if (value) setCount(target, key, value); else delete target[key];
   });
 }
 
@@ -45,7 +80,7 @@ export function applyStatsDelta(stats: StatsState, delta: StatsDelta, direction:
 
 export function resetStats(stats: StatsState, mode: DrawMode): StatsState {
   const next = structuredClone(stats);
-  next.byMode[mode] = { ...emptyBucket(), resetAt: new Date().toISOString() };
+  next.byMode[mode] = { ...emptyBucket(), resetAt: new Date().toISOString(), epoch: createId("stats") };
   return next;
 }
 
@@ -58,10 +93,11 @@ export function normalizeStats(value: unknown): StatsState {
     if (!bucket) return;
     next.byMode[mode] = {
       draws: Math.max(0, Number(bucket.draws) || 0),
-      values: bucket.values && typeof bucket.values === "object" ? { ...bucket.values } : {},
-      faces: bucket.faces && typeof bucket.faces === "object" ? { ...bucket.faces } : {},
-      tags: bucket.tags && typeof bucket.tags === "object" ? { ...bucket.tags } : {},
+      values: normalizeCountMap(bucket.values),
+      faces: normalizeCountMap(bucket.faces),
+      tags: normalizeCountMap(bucket.tags),
       resetAt: typeof bucket.resetAt === "string" ? bucket.resetAt : null,
+      ...(typeof bucket.epoch === "string" ? { epoch: bucket.epoch } : {}),
     };
   });
   return next;

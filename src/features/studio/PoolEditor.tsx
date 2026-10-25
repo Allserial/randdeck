@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useVirtualizer } from "@tanstack/react-virtual";
-import Papa from "papaparse";
 import { Check, Download, FileInput, Plus, RotateCcw, Trash2, Upload } from "lucide-react";
 import type { PoolEntry } from "../../domain/types";
 import { createId, parseIntegerList } from "../../domain/random";
@@ -10,6 +9,7 @@ import { useAppStore } from "../../app/store";
 import { Button } from "../../components/ui/Button";
 import { Dialog } from "../../components/ui/Dialog";
 import { translateRuntimeMessage } from "../../i18n/messages";
+import { exportPoolCsv, parsePoolImport } from "./poolImport";
 
 export default function PoolEditor({ mode = "custom" }: { mode?: "custom" }) {
   const { t } = useTranslation();
@@ -127,20 +127,8 @@ export default function PoolEditor({ mode = "custom" }: { mode?: "custom" }) {
     if (!file) return;
     try {
       const text = await file.text();
-      let entries: PoolEntry[];
-      if (file.name.toLowerCase().endsWith(".json")) {
-        const data = JSON.parse(text);
-        entries = data.entries || data.pools?.customEntries || data;
-      } else {
-        entries = parseBulk(text);
-      }
-      mutate(
-        entries.map((entry) => ({
-          ...entry,
-          id: entry.id || createId("custom"),
-          tags: entry.tags || [],
-        }))
-      );
+      const entries = parsePoolImport(text, file.name);
+      mutate(entries);
       setToast(`${t("common.actions.import")} (${entries.length} ${t("common.units.rows")})`);
     } catch (error) {
       setError(t("errors.importFailed", { message: translateRuntimeMessage((error as Error).message, t) }));
@@ -148,9 +136,7 @@ export default function PoolEditor({ mode = "custom" }: { mode?: "custom" }) {
   };
 
   const exportData = async () => {
-    const csv = `\uFEFF${Papa.unparse(
-      draft.map((entry) => ({ 数字: entry.value, 标签: entry.tags.join("|") }))
-    )}`;
+    const csv = exportPoolCsv(draft);
     await saveLocalFile(
       locale === "en-US" ? "RandDeck-custom-pool.csv" : "掷数台-自定义池.csv",
       csv,

@@ -65,6 +65,7 @@ export type AppStore = AppState & RuntimeState & AppActions;
 
 let adapter: PersistenceAdapter = createPersistenceAdapter();
 let saveTimer: number | undefined;
+let saveQueue: Promise<void> = Promise.resolve();
 
 function countMemoryMode(mode: DrawMode): CountMemoryMode {
   return mode === "weighted" ? "custom" : mode;
@@ -96,15 +97,26 @@ function queuePersistence(immediate = false): void {
   const run = () => {
     const state = useAppStore.getState();
     if (!state.hydrated) return;
-    savePersistedState(persistentSnapshot(state), adapter).catch((error) =>
-      useAppStore.setState({ error: createRuntimeMessage("errors.localSave", { message: messageFromUnknown(error) }) })
-    );
+    void persistCurrentSnapshot().catch(() => { /* Error is also exposed in store state. */ });
   };
   if (immediate) void run();
   else saveTimer = window.setTimeout(run, 350);
 }
 
-function transactionEntry(transaction: DrawTransaction): HistoryEntry {
+function persistCurrentSnapshot(): Promise<void> {
+  const snapshot = persistentSnapshot(useAppStore.getState());
+  const targetAdapter = adapter;
+  const pending = saveQueue.catch(() => undefined)
+    .then(() => savePersistedState(snapshot, targetAdapter))
+    .catch((error) => {
+      useAppStore.setState({ error: createRuntimeMessage("errors.localSave", { message: messageFromUnknown(error) }) });
+      throw error;
+    });
+  saveQueue = pending;
+  return pending;
+}
+
+function transactionEntry(transaction: DrawTransaction, statsEpoch: string, poolEpoch: string): HistoryEntry {
   return {
     id: createId("history"),
     transactionId: transaction.id,
@@ -116,6 +128,8 @@ function transactionEntry(transaction: DrawTransaction): HistoryEntry {
     statsDelta: transaction.statsDelta,
     poolFingerprint: transaction.poolFingerprint,
     usedAdded: transaction.usedAdded,
+    statsEpoch,
+    poolEpoch,
     receipt: transaction.receipt,
     sessionId: transaction.session?.id,
     presetId: transaction.presetId,
@@ -133,6 +147,8 @@ function historyTransactionRecord(entry: HistoryEntry): SessionTransactionRecord
     statsDelta: entry.statsDelta,
     poolFingerprint: entry.poolFingerprint,
     usedAdded: entry.usedAdded || [],
+    statsEpoch: entry.statsEpoch,
+    poolEpoch: entry.poolEpoch,
     receipt: entry.receipt,
   };
 }
@@ -147,12 +163,29 @@ function removeTransactions(state: AppStore, ids: Set<string>, fallbackRecords: 
     if (record) records.set(record.id, record);
   });
   records.forEach((record) => {
-    stats = applyStatsDelta(stats, record.statsDelta, -1);
-    if (record.poolFingerprint === state.drawState.poolFingerprint) {
+    const bucket = stats.byMode[record.statsDelta.mode];
+    const sameStatsEpoch = record.statsEpoch !== undefined
+      ? record.statsEpoch === (bucket.epoch || "legacy")
+      : !bucket.epoch && (!bucket.resetAt || Date.parse(record.createdAt) >= Date.parse(bucket.resetAt));
+    if (sameStatsEpoch) stats = applyStatsDelta(stats, record.statsDelta, -1);
+    if (record.poolFingerprint === state.drawState.poolFingerprint
+      && (record.poolEpoch || "legacy") === (state.drawState.poolEpoch || "legacy")) {
       record.usedAdded.forEach((value) => usedToRemove.add(value));
     }
   });
   const history = state.history.filter((entry) => !entry.transactionId || !ids.has(entry.transactionId));
+  // Legacy v5 saves have no pool-reset boundary. Retained transactions still
+  // owning a value must win over an old transaction's attempted release.
+  const remainingRecords = [
+    ...history.map(historyTransactionRecord).filter((record): record is SessionTransactionRecord => Boolean(record)),
+    ...state.sessionArchive.flatMap((session) => session.transactionRecords).filter((record) => !ids.has(record.id)),
+  ];
+  remainingRecords.forEach((record) => {
+    if (record.poolFingerprint === state.drawState.poolFingerprint
+      && (record.poolEpoch || "legacy") === (state.drawState.poolEpoch || "legacy")) {
+      record.usedAdded.forEach((value) => usedToRemove.delete(value));
+    }
+  });
   return {
     history,
     stats,
@@ -318,16 +351,18 @@ export const useAppStore = create<AppStore>((set, get) => ({
   commitTransaction(transaction) {
     set((state) => {
       const samePool = state.drawState.poolFingerprint === transaction.poolFingerprint;
+      const poolEpoch = samePool ? state.drawState.poolEpoch || "legacy" : createId("pool");
       const used = transaction.usedAdded.length
         ? [...new Set([...(samePool ? state.drawState.usedValues : []), ...transaction.usedAdded])]
         : (samePool ? state.drawState.usedValues : []);
       return {
-        history: [transactionEntry(transaction), ...state.history].slice(0, HISTORY_LIMIT),
+        history: [transactionEntry(transaction, state.stats.byMode[transaction.mode].epoch || "legacy", poolEpoch), ...state.history].slice(0, HISTORY_LIMIT),
         stats: applyStatsDelta(state.stats, transaction.statsDelta),
         currentResults: transaction.results,
         resultPresentation: transactionPresentation(transaction),
         drawState: {
           poolFingerprint: transaction.poolFingerprint,
+          poolEpoch,
           usedValues: used,
           lastTransactionId: transaction.id,
           activePresetId: state.drawState.activePresetId,
@@ -365,7 +400,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
     return true;
   },
   resetPool() {
-    set((state) => ({ drawState: { ...state.drawState, poolFingerprint: "", usedValues: [] }, revision: state.revision + 1 }));
+    set((state) => ({ drawState: { ...state.drawState, poolFingerprint: "", poolEpoch: createId("pool"), usedValues: [] }, revision: state.revision + 1 }));
     queuePersistence(true);
   },
   deleteHistory(id) {
@@ -497,7 +532,7 @@ export async function initializeStore(customAdapter?: PersistenceAdapter): Promi
 export async function flushStore(): Promise<void> {
   window.clearTimeout(saveTimer);
   const state = useAppStore.getState();
-  if (state.hydrated) await savePersistedState(persistentSnapshot(state), adapter);
+  if (state.hydrated) await persistCurrentSnapshot();
 }
 
 export function snapshotState(): AppState {

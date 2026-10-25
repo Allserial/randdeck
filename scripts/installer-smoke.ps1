@@ -1,5 +1,5 @@
-param(
-  [string]$Version = "0.7.0",
+﻿param(
+  [string]$Version = "0.7.1",
   [string]$InstallerPath = "",
   [string]$PreviousInstallerPath = ""
 )
@@ -18,7 +18,7 @@ $previousInstaller = (Resolve-Path -LiteralPath $PreviousInstallerPath).Path
 $appDataDir = [System.IO.Path]::GetFullPath((Join-Path $env:APPDATA "com.zhishutai.desktop"))
 $tempRoot = [System.IO.Path]::GetFullPath((Join-Path $env:TEMP ("randdeck-v$($Version.Replace('.', ''))-upgrade-smoke-" + [guid]::NewGuid().ToString("N"))))
 $installDir = Join-Path $tempRoot "app"
-$backupDir = Join-Path $tempRoot "backup"
+$backupDir = Join-Path $root ("reports\installer-backups\$Version-" + [guid]::NewGuid().ToString('N'))
 $appDataBackup = Join-Path $backupDir "app-data"
 $sentinelPath = Join-Path $appDataDir "upgrade-smoke-sentinel.json"
 $reportPath = Join-Path $root "reports\installer-smoke.json"
@@ -106,12 +106,19 @@ function Invoke-InstalledUninstaller([string]$Directory) {
 $baselineEntries = @(Get-UninstallEntries)
 $baselineShortcuts = @(Get-ProductShortcuts)
 $runningProcesses = @(Get-Process -Name "randdeck", "zhishutai" -ErrorAction SilentlyContinue)
+if ($runningProcesses.Count) { throw "检测到 RandDeck/掷数台正在运行，未改动任何应用数据。" }
+if ($baselineEntries.Count) { throw "检测到现有安装项，为保护真实安装，未改动应用数据或安装项。" }
 $stateExisted = Test-Path -LiteralPath $appDataDir
 $stateHashBefore = $null
+$stateFilesBefore = @{}
+$previousWebViewProfile = $env:WEBVIEW2_USER_DATA_FOLDER
 if ($stateExisted) {
   New-Item -ItemType Directory -Path $appDataBackup -Force | Out-Null
   foreach ($item in Get-ChildItem -LiteralPath $appDataDir -Force) {
     Copy-Item -LiteralPath $item.FullName -Destination $appDataBackup -Recurse -Force
+  }
+  foreach ($item in Get-ChildItem -LiteralPath $appDataDir -File -Recurse -Force) {
+    $stateFilesBefore[$item.FullName.Substring($appDataDir.Length + 1)] = (Get-FileHash -LiteralPath $item.FullName -Algorithm SHA256).Hash
   }
   $statePath = Join-Path $appDataDir "state-v5.json"
   if (Test-Path -LiteralPath $statePath) {
@@ -134,6 +141,8 @@ $report = [ordered]@{
   }
   statePath = "%APPDATA%\com.zhishutai.desktop\state-v5.json"
   stateHashBefore = $stateHashBefore
+  baselineBackup = $appDataBackup
+  originalStateFileCount = $stateFilesBefore.Count
   previousInstallExitCode = $null
   previousExecutable = $null
   previousLaunched = $false
@@ -164,6 +173,7 @@ $report = [ordered]@{
 try {
   if ($runningProcesses.Count) { throw "检测到 RandDeck/掷数台正在运行，请关闭后重试安装升级烟测" }
   if ($baselineEntries.Count) { throw "检测到现有 RandDeck/掷数台安装项；为避免影响真实安装，已停止烟测" }
+  $env:WEBVIEW2_USER_DATA_FOLDER = Join-Path $backupDir 'isolated-webview-profile'
 
   if (Test-Path -LiteralPath $appDataDir) {
     Remove-Item -LiteralPath $appDataDir -Recurse -Force
@@ -180,6 +190,10 @@ try {
   $sentinel = [ordered]@{ id = [guid]::NewGuid().ToString("N"); createdAt = (Get-Date).ToUniversalTime().ToString("o") }
   $sentinel | ConvertTo-Json | Set-Content -LiteralPath $sentinelPath -Encoding UTF8
   $sentinelHash = (Get-FileHash -LiteralPath $sentinelPath -Algorithm SHA256).Hash.ToLowerInvariant()
+  $upgradeStateHashes = @{}
+  foreach ($file in Get-ChildItem -LiteralPath $appDataDir -File -Recurse -Force) {
+    $upgradeStateHashes[$file.FullName.Substring($appDataDir.Length + 1)] = (Get-FileHash -LiteralPath $file.FullName -Algorithm SHA256).Hash
+  }
 
   $report.installExitCode = Invoke-Installer $installer $installDir
   $entriesAfterUpgrade = @(Get-UninstallEntries)
@@ -198,7 +212,7 @@ try {
   $oldNewShortcuts = @($newShortcuts | Where-Object { [System.IO.Path]::GetFileNameWithoutExtension($_) -match "^(掷数台|zhishutai)$" })
 
   $installedExe = Get-Item -LiteralPath (Join-Path $installDir "RandDeck.exe") -ErrorAction SilentlyContinue
-  if (!$installedExe) { throw "v0.7.0 升级后未找到 RandDeck.exe" }
+  if (!$installedExe) { throw "v$Version 升级后未找到 RandDeck.exe" }
   $report.installedExecutable = $installedExe.Name
   $report.oldExecutableRemoved = !(Test-Path -LiteralPath (Join-Path $installDir "zhishutai.exe"))
   $report.singleUninstallEntry = $entriesAfterUpgrade.Count -eq 1
@@ -210,6 +224,10 @@ try {
   $report.newShortcutCount = $newShortcuts.Count
   $report.oldShortcutsRemoved = $oldNewShortcuts.Count -eq 0
   $report.statePreservedAcrossUpgrade = (Test-Path -LiteralPath $sentinelPath) -and ((Get-FileHash -LiteralPath $sentinelPath -Algorithm SHA256).Hash.ToLowerInvariant() -eq $sentinelHash)
+  foreach ($name in $upgradeStateHashes.Keys) {
+    $file = Join-Path $appDataDir $name
+    if (!(Test-Path -LiteralPath $file) -or (Get-FileHash -LiteralPath $file -Algorithm SHA256).Hash -ne $upgradeStateHashes[$name]) { $report.statePreservedAcrossUpgrade = $false }
+  }
 
   $report.windowTitle = Invoke-AppSmoke $installedExe.FullName $installDir
   $report.launched = [bool]$report.windowTitle
@@ -237,6 +255,7 @@ try {
 } catch {
   $report.error = $_.Exception.Message
 } finally {
+  $env:WEBVIEW2_USER_DATA_FOLDER = $previousWebViewProfile
   if (Test-Path -LiteralPath $installDir) {
     $fallbackUninstaller = Get-ChildItem -LiteralPath $installDir -Filter "uninstall*.exe" -File -ErrorAction SilentlyContinue | Select-Object -First 1
     if ($fallbackUninstaller) {
@@ -261,6 +280,15 @@ try {
     }
   } else {
     $report.stateRestored = !(Test-Path -LiteralPath $appDataDir)
+  }
+  if ($stateExisted) {
+    $restoredFiles = @(Get-ChildItem -LiteralPath $appDataDir -File -Recurse -Force)
+    $allStateFilesMatch = $restoredFiles.Count -eq $stateFilesBefore.Count
+    foreach ($file in $restoredFiles) {
+      $relative = $file.FullName.Substring($appDataDir.Length + 1)
+      if (!$stateFilesBefore.ContainsKey($relative) -or (Get-FileHash -LiteralPath $file.FullName -Algorithm SHA256).Hash -ne $stateFilesBefore[$relative]) { $allStateFilesMatch = $false }
+    }
+    $report.stateRestored = $report.stateRestored -and $allStateFilesMatch
   }
 
   if (Test-Path -LiteralPath $tempRoot) {

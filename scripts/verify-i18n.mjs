@@ -12,7 +12,8 @@ const hardCodedAllowlist = new Map([
   ["src/app/store.ts", "store fallback messages are translated at the UI boundary"],
   ["src/app/drawController.ts", "domain error contracts are translated at the UI boundary"],
   ["src/features/display/DisplayView.tsx", "legacy display payload labels remain protocol-compatible"],
-  ["src/features/studio/PoolEditor.tsx", "Chinese CSV field names remain stable export fields"],
+  ["src/features/studio/PoolEditor.tsx", "localized CSV filenames use the selected product name"],
+  ["src/features/studio/poolImport.ts", "Chinese CSV field names remain stable import/export protocol fields"],
   ["src/features/settings/SettingsView.tsx", "localized backup and CSV filenames use the selected product name"],
   ["src/components/BrandMark.tsx", "the paired product brand is intentionally bilingual"],
 ]);

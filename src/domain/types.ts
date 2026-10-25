@@ -110,6 +110,7 @@ export interface StatsBucket {
   faces: Record<string, number>;
   tags: Record<string, number>;
   resetAt: string | null;
+  epoch?: string;
 }
 
 export interface StatsState {
@@ -200,6 +201,8 @@ export interface HistoryEntry {
   statsDelta?: StatsDelta;
   poolFingerprint?: string;
   usedAdded?: number[];
+  statsEpoch?: string;
+  poolEpoch?: string;
   receipt?: ReceiptPayload;
   sessionId?: string;
   presetId?: string;
@@ -221,6 +224,8 @@ export interface SessionTransactionRecord {
   statsDelta: StatsDelta;
   poolFingerprint: string;
   usedAdded: number[];
+  statsEpoch?: string;
+  poolEpoch?: string;
   receipt?: ReceiptPayload;
 }
 
@@ -239,6 +244,7 @@ export interface DrawSession {
 
 export interface DrawState {
   poolFingerprint: string;
+  poolEpoch?: string;
   usedValues: number[];
   lastTransactionId: string | null;
   activePresetId: string | null;

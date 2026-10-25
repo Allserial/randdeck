@@ -232,7 +232,7 @@ export default function SettingsView() {
           </div>
           <div className="display-modes">
             <Button icon={<MonitorUp size={16} />} onClick={async () => {
-              try { await openDisplayWindow(settings.desktop.displayMode); await publishCurrentDisplay(); }
+              try { await openDisplayWindow(settings.desktop.displayMode, settings.desktop.displayClickThrough); await publishCurrentDisplay(); }
               catch (error) { setError((error as Error).message); }
             }}>{t("roll.display")}</Button>
             <button
