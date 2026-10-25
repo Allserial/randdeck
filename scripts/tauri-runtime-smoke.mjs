@@ -564,7 +564,12 @@ try {
     assert.equal(display.isClosed(), false, "Display must remain open when closing main");
     const title = await native("plugin:window|title", { label: "main" });
     await collectIpc();
-    const closed = Promise.all([main.waitForEvent("close", { timeout: 15_000 }), display.waitForEvent("close", { timeout: 15_000 }), browser.waitForEvent("disconnected", { timeout: 15_000 })]);
+    const disconnected = new Promise((done, reject) => {
+      if (!browser.isConnected()) { done(); return; }
+      const timeout = setTimeout(() => reject(new Error("WebView2 did not disconnect after closing main")), 15_000);
+      browser.once("disconnected", () => { clearTimeout(timeout); done(); });
+    });
+    const closed = Promise.all([main.waitForEvent("close", { timeout: 15_000 }), display.waitForEvent("close", { timeout: 15_000 }), disconnected]);
     void closed.catch(() => undefined);
     report.nativeClose = await closeMainViaWmClose(title);
     assert.equal(report.nativeClose.posted, true);
