@@ -11,7 +11,7 @@ import { LogicalSize, PhysicalSize, Size } from "@tauri-apps/api/dpi";
 // All UI/IPC checks below run in its real WebView2; no HTTP server is started here.
 const root = fileURLToPath(new URL("../", import.meta.url));
 const endpoint = process.env.TAURI_CDP_URL || "http://127.0.0.1:9222";
-const reportDir = resolve(root, process.env.TAURI_RUNTIME_REPORT_DIR || "reports/tauri-runtime/0.7.2");
+const reportDir = resolve(root, process.env.TAURI_RUNTIME_REPORT_DIR || "reports/tauri-runtime/0.7.3");
 const executable = resolve(root, process.env.TAURI_EXECUTABLE || "src-tauri/target/release/randdeck.exe");
 const targetProcessId = Number(process.env.TAURI_PROCESS_ID);
 const runtimeSessionId = process.env.TAURI_RUNTIME_SESSION_ID || null;

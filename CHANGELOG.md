@@ -1,5 +1,17 @@
 # 更新日志 (Changelog)
 
+## 0.7.3 - 2026-10-25
+
+### 中文
+
+- 修复新一轮桌面验证在原生报告生成前失败时，发布门禁可能复用旧成功记录的问题。开始验证即记录待完成状态，发布必须绑定最新完成会话、进程、时间范围、源码和 EXE 哈希；失败或中断均阻止发布。
+- 补强关闭期间的撤销、历史召回和存档操作回归，使用有效的真实记录，验证关闭期间拒绝修改、恢复编辑后操作成功并能保存。
+
+### English
+
+- Prevented a desktop attempt that fails before producing its runtime report from being masked by older successful evidence. Release gates bind the latest completed session, process, timestamps, source and executable hashes; pending or failed attempts block publication.
+- Strengthened shutdown regression tests with valid transactions, history and archived sessions, checking rejection during close and successful persisted actions after editing resumes.
+
 ## 0.7.2 - 2026-10-25
 
 ### 中文

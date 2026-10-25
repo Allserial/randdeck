@@ -53,8 +53,38 @@ async function closeHandler(onError = vi.fn()) {
   return mocks.main.onCloseRequested.mock.calls[0][0] as (event: { preventDefault(): void }) => Promise<void>;
 }
 
+async function seedHistoryAndArchive() {
+  const state = useAppStore.getState();
+  state.updateSettings({ min: 1, max: 1, count: 1 });
+  const first = executeDraw(prepareDraw(snapshotState()), new SeededRandomSource(71));
+  state.commitTransaction(first);
+  state.updateSettings({ min: 2, max: 2 });
+  const second = executeDraw(prepareDraw(snapshotState()), new SeededRandomSource(72));
+  state.commitTransaction(second);
+  const snapshot = snapshotState();
+  const sessionId = "close-test-session";
+  // Real accepted transactions, including their reset epochs, make undo and
+  // session operations valid independently of the closing guard being tested.
+  useAppStore.setState({ sessionArchive: [{
+    id: sessionId, name: "关闭保护回归", startedAt: first.createdAt, endedAt: second.createdAt,
+    configSnapshot: snapshot.settings, poolsSnapshot: snapshot.pools, poolFingerprint: first.poolFingerprint,
+    transactionIds: [first.id, second.id], roundCount: 2,
+    transactionRecords: snapshot.history.map((entry) => ({
+      id: entry.transactionId!, createdAt: entry.createdAt!, results: entry.results,
+      operation: entry.operation!, statsDelta: entry.statsDelta!, poolFingerprint: entry.poolFingerprint!,
+      usedAdded: entry.usedAdded!, statsEpoch: entry.statsEpoch, poolEpoch: entry.poolEpoch,
+    })),
+  }] });
+  const historyId = snapshot.history.find((entry) => entry.transactionId === first.id)!.id;
+  state.setView("insights");
+  state.toggleCompare(historyId);
+  await flushStore();
+  return { transactionId: first.id, historyId, sessionId };
+}
+
 describe("closing with the final durable state", () => {
   it("freezes every persistent action while the close snapshot is saving", async () => {
+    const { transactionId, historyId, sessionId } = await seedHistoryAndArchive();
     useAppStore.getState().updateSettings({ max: 12 });
     const transaction = executeDraw(prepareDraw(snapshotState()), new SeededRandomSource(72));
     const close = await closeHandler();
@@ -64,24 +94,65 @@ describe("closing with the final durable state", () => {
     const before = structuredClone(snapshotState());
     const revision = useAppStore.getState().revision;
     const state = useAppStore.getState();
-    expect(state.isClosing).toBe(true);
-    state.updateSettings({ max: 99 });
-    state.updatePools({ customEntries: [{ id: "late", value: 99, tags: [] }] });
-    state.setView("settings"); state.setLocale("en-US"); state.setInspectorOpen(false);
-    state.setInsightsTab("history"); state.toggleCompare("x"); state.clearCompare(); state.setCopyFormat("newline");
-    state.commitTransaction(transaction); state.resetPool(); state.deleteHistory("x"); state.clearHistory();
-    state.updateHistoryNote("x", "late"); state.resetModeStats("range"); state.recallHistory("x");
-    state.replacePersistentState(createDefaultState("en-US"));
-    expect(state.revertTransaction("x")).toBe(false);
-    expect(state.revertSession("x")).toBe(false);
-    expect(state.deleteArchivedSession("x")).toBe(false);
+    try {
+      expect(state.isClosing).toBe(true);
+      state.updateSettings({ max: 99 });
+      state.updatePools({ customEntries: [{ id: "late", value: 99, tags: [] }] });
+      state.setView("settings"); state.setLocale("en-US"); state.setInspectorOpen(false);
+      state.setInsightsTab("history"); state.toggleCompare(historyId); state.clearCompare(); state.setCopyFormat("newline");
+      state.commitTransaction(transaction); state.resetPool(); state.deleteHistory(historyId); state.clearHistory();
+      state.updateHistoryNote(historyId, "late"); state.resetModeStats("range"); state.recallHistory(historyId);
+      state.replacePersistentState(createDefaultState("en-US"));
+      expect(state.revertTransaction(transactionId)).toBe(false);
+      expect(state.revertSession(sessionId)).toBe(false);
+      expect(state.deleteArchivedSession(sessionId)).toBe(false);
+      expect(snapshotState()).toEqual(before);
+      expect(useAppStore.getState().revision).toBe(revision);
+      expect(mocks.main.destroy).not.toHaveBeenCalled();
+      mocks.main.destroy.mockImplementation(async () => { expect(adapter.envelope.current).toEqual(before); });
+    } finally {
+      // A failed guard assertion must still release the blocked save, so a
+      // detected regression cannot leave every following test waiting forever.
+      adapter.release();
+      await pending;
+    }
+    expect(mocks.main.destroy).toHaveBeenCalledOnce();
+  });
+
+  it.each(["recall", "undo", "undo-session", "delete-session"] as const)("rejects valid %s during close and persists it after editing resumes", async (action) => {
+    const { transactionId, historyId, sessionId } = await seedHistoryAndArchive();
+    const state = useAppStore.getState();
+    const apply = () => {
+      if (action === "recall") return state.recallHistory(historyId);
+      if (action === "undo") return state.revertTransaction(transactionId);
+      if (action === "undo-session") return state.revertSession(sessionId);
+      return state.deleteArchivedSession(sessionId);
+    };
+    beginStoreClose();
+    const before = structuredClone(snapshotState());
+    const revision = useAppStore.getState().revision;
+    const results = structuredClone(useAppStore.getState().currentResults);
+    const rejected = apply();
+    if (action !== "recall") expect(rejected).toBe(false);
     expect(snapshotState()).toEqual(before);
     expect(useAppStore.getState().revision).toBe(revision);
-    expect(mocks.main.destroy).not.toHaveBeenCalled();
-    mocks.main.destroy.mockImplementation(async () => { expect(adapter.envelope.current).toEqual(before); });
-    adapter.release();
-    await pending;
-    expect(mocks.main.destroy).toHaveBeenCalledOnce();
+    expect(useAppStore.getState().currentResults).toEqual(results);
+    endStoreClose();
+    const accepted = apply();
+    if (action === "recall") {
+      expect(useAppStore.getState().ui.activeView).toBe("roll");
+      expect(useAppStore.getState().currentResults).toEqual(before.history.find((entry) => entry.id === historyId)!.results);
+      expect(useAppStore.getState().currentResults).not.toEqual(results);
+    } else {
+      expect(accepted).toBe(true);
+      if (action === "undo") expect(useAppStore.getState().history.some((entry) => entry.transactionId === transactionId)).toBe(false);
+      if (action === "undo-session") expect(useAppStore.getState().history).toHaveLength(0);
+      if (action !== "undo") expect(useAppStore.getState().sessionArchive).toHaveLength(0);
+    }
+    expect(useAppStore.getState().revision).toBeGreaterThan(revision);
+    await flushStore();
+    expect(adapter.envelope.current).toEqual(snapshotState());
+    expect(adapter.envelope.current).not.toEqual(before);
   });
 
   it("drains transactions already queued before close and rejects late transactions", async () => {

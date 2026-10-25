@@ -1,5 +1,5 @@
 ﻿param(
-  [string]$Version = "0.7.2"
+  [string]$Version = "0.7.3"
 )
 
 $ErrorActionPreference = "Continue"
@@ -60,13 +60,17 @@ $sourceBranch = (& git -C $root branch --show-current 2>$null).Trim()
 $runtime = if (Test-Path -LiteralPath $runtimePath) {
   try {
     $runtimeReport = Get-Content -Raw -LiteralPath $runtimePath -Encoding UTF8 -ErrorAction Stop | ConvertFrom-Json -ErrorAction Stop
-    Assert-NativeRuntimeReport -Root $root -Native $runtimeReport -SourceCommit $sourceCommit
+    Assert-NativeRuntimeReport -Root $root -Native $runtimeReport -SourceCommit $sourceCommit -Version $Version
     [pscustomobject]@{
       status = "passed"
       report = "reports/tauri-runtime/$Version/runtime-smoke.json"
       sha256 = (Get-FileHash -LiteralPath $runtimePath -Algorithm SHA256 -ErrorAction Stop).Hash.ToLowerInvariant()
       sourceCommit = $runtimeReport.sourceCommit
       executableSha256 = $runtimeReport.executableSha256
+      protectedSession = [pscustomobject]@{
+        report = Get-ProtectedDesktopSessionPath $Version
+        sha256 = (Get-FileHash -LiteralPath (Join-Path $root (Get-ProtectedDesktopSessionPath $Version)) -Algorithm SHA256 -ErrorAction Stop).Hash.ToLowerInvariant()
+      }
     }
   } catch {
     [pscustomobject]@{ status = "stale-or-failed"; report = "reports/tauri-runtime/$Version/runtime-smoke.json"; sha256 = $null; error = $_.Exception.Message }
