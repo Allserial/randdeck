@@ -5,6 +5,7 @@ import { mkdir, readFile, readdir, writeFile } from "node:fs/promises";
 import { relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { chromium } from "playwright";
+import { LogicalSize, PhysicalSize, Size } from "@tauri-apps/api/dpi";
 
 // The caller owns startup, isolated AppData/profile, EXE-exit/restart checks and restoration.
 // All UI/IPC checks below run in its real WebView2; no HTTP server is started here.
@@ -429,6 +430,83 @@ try {
     await selectMotion("即时");
     await selectTheme("标准墨蓝");
     return { fixture: "Synthetic finished phase, UI-generated transaction; real Settings appearance changes and Tauri IPC", systemReducedMotion, mediaOverride: systemReducedMotion ? "no-preference" : null, cases };
+  });
+
+  await check("native-dense-dice-result-geometry", async () => {
+    const frame = () => main.evaluate(() => ({ innerWidth, innerHeight, devicePixelRatio }));
+    const originalPhysicalSize = await native("plugin:window|inner_size", { label: "main" });
+    const originalFrame = await frame();
+    const scaleFactor = await native("plugin:window|scale_factor", { label: "main" });
+    report.denseDice = { originalPhysicalSize, originalFrame, scaleFactor, scenarios: [], restoration: null,
+      scope: "Real release EXE WebView2, native logical client sizes on the current monitor; not physical multi-monitor acceptance" };
+    const resizeLogical = async (width, height) => {
+      // Use the installed SDK's Size serialization, exactly as Window.setSize does.
+      await native("plugin:window|set_size", { label: "main", value: new Size(new LogicalSize(width, height)).toJSON() });
+      await until(async () => {
+        const actual = await frame();
+        return Math.abs(actual.innerWidth - width) <= 2 && Math.abs(actual.innerHeight - height) <= 2;
+      }, `Native main resize did not reach requested logical size ${width}x${height}`);
+      await main.evaluate(() => new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done))));
+      return { requestedLogicalSize: { width, height }, actual: await frame(),
+        nativePhysicalSize: await native("plugin:window|inner_size", { label: "main" }) };
+    };
+    try {
+      await resizeLogical(1180, 820);
+      await main.getByLabel("主导航").getByRole("button", { name: "抽取台", exact: true }).click();
+      await main.getByLabel("抽取模式").getByRole("button", { name: "骰子表达式", exact: true }).click();
+      await main.getByRole("group", { name: "求值方式", exact: true }).getByRole("button", { name: "批量求值", exact: true }).click();
+      await main.getByRole("textbox", { name: "表达式", exact: true }).fill("1d20+5+2d6+2+1d4");
+      for (const count of [11, 20, 50]) {
+        await resizeLogical(1180, 820);
+        const quantity = main.getByRole("textbox", { name: "生成数量", exact: true });
+        if (!await quantity.isVisible()) await main.locator(".inspector-toggle:visible").click();
+        await quantity.fill(String(count));
+        await quantity.press("Enter");
+        await main.locator(".generate-main-btn:visible").click();
+        await until(async () => await main.locator(".result-tile--expression:not(.is-rolling)").count() === count,
+          `Real dice draw did not produce ${count} cards`);
+        for (const width of [680, 760]) {
+          const dimensions = await resizeLogical(width, 700);
+          if (await main.locator(".inspector-close:visible").count()) await main.locator(".inspector-close:visible").click();
+          const metrics = await main.locator(".result-tile").evaluateAll((tiles) => tiles.map((tile, index) => {
+            const value = tile.querySelector(".result-value").getBoundingClientRect();
+            const textElement = tile.querySelector(".fit-number");
+            const text = textElement.getBoundingClientRect();
+            const footer = tile.querySelector(".tile-footer").getBoundingClientRect();
+            const card = tile.getBoundingClientRect();
+            return { index, text: textElement.textContent, valueHeight: value.height, textHeight: text.height,
+              topInset: text.top - value.top, bottomInset: value.bottom - text.bottom,
+              leftInset: text.left - value.left, rightInset: value.right - text.right,
+              footerInset: card.bottom - footer.bottom, overflow: tile.scrollHeight - tile.clientHeight };
+          }));
+          report.denseDice.scenarios.push({ count, ...dimensions, metrics });
+          assert.equal(metrics.length, count);
+          for (const metric of metrics) {
+            const detail = `${count} cards at logical ${width}px, ${JSON.stringify(dimensions.actual)}: ${JSON.stringify(metric)}`;
+            assert(/^-?\d+$/.test(metric.text), `Unreadable native dice value: ${detail}`);
+            assert(metric.topInset >= -0.5, `Dice value clipped at top: ${detail}`);
+            assert(metric.bottomInset >= -0.5, `Dice value clipped at bottom: ${detail}`);
+            assert(metric.leftInset >= -0.5, `Dice value clipped at left: ${detail}`);
+            assert(metric.rightInset >= -0.5, `Dice value clipped at right: ${detail}`);
+            assert(metric.footerInset >= -0.5, `Dice footer clipped: ${detail}`);
+            assert(metric.overflow <= 1, `Dice card content overflow: ${detail}`);
+          }
+          if (count === 50) await screenshot(main, `native-dense-dice-50-${width}`);
+        }
+      }
+    } catch (error) {
+      await screenshot(main, "native-dense-dice-failure").catch(() => undefined);
+      throw error;
+    } finally {
+      await native("plugin:window|set_size", { label: "main", value: new Size(new PhysicalSize(originalPhysicalSize)).toJSON() });
+      await until(async () => {
+        const actual = await frame();
+        return Math.abs(actual.innerWidth - originalFrame.innerWidth) <= 2 && Math.abs(actual.innerHeight - originalFrame.innerHeight) <= 2;
+      }, "Native main window did not restore its original client size");
+      report.denseDice.restoration = { actual: await frame(), nativePhysicalSize: await native("plugin:window|inner_size", { label: "main" }) };
+      await settings();
+    }
+    return report.denseDice;
   });
 
   await check("single-instance", async () => {
