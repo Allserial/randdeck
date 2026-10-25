@@ -17,6 +17,7 @@ const requiredGates = readContract('Get-RequiredReleaseGates');
 const requiredNativeChecks = readContract('Get-RequiredNativeRuntimeChecks');
 const protectedSessionChecks = ['savedStateMatched', 'reopenedStateMatched', 'stateRestored', 'applicationClosed', 'reopened', 'passed'];
 const executablePath = 'src-tauri/target/release/randdeck.exe';
+const protectedPath = 'reports/tauri-runtime/0.7.1/protected-desktop-session.json';
 
 function readContract(functionName) {
   const result = runPowerShell(`$ErrorActionPreference = 'Stop'; . ${quotePowerShell(guard)}; @(${functionName}) | ConvertTo-Json -Compress`);
@@ -36,18 +37,27 @@ function fixture() {
   };
   const native = {
     schema: 'zhishutai.tauri-runtime-smoke.v1', passed: true, cleanSource: true, sourceCommit, sessionId: 'c'.repeat(32),
+    generatedAt: '2026-10-25T00:00:01.100Z', processId: 11111,
     protectedSession: Object.fromEntries(protectedSessionChecks.map((id) => [id, true])),
     checks: requiredNativeChecks.map((id) => ({ id, status: 'passed' })), consoleErrors: [], ipcErrors: [],
     executablePath, executableSha256: write(executablePath, 'synthetic fixture bytes; never executed'),
   };
+  const latest = {
+    schema: 'zhishutai.protected-desktop-session.v1', version: '0.7.1', status: 'passed', error: null,
+    sessionId: native.sessionId, sourceCommit, executablePath, executableSha256: native.executableSha256,
+    processId: native.processId, startedAt: '2026-10-25T00:00:01.000Z', completedAt: '2026-10-25T00:00:02.000Z',
+    ...Object.fromEntries(protectedSessionChecks.map((id) => [id, true])),
+  };
   const verification = {
     schema: 'zhishutai.verification.v1', passed: true, version: '0.7.1', sourceCommit, sourceBranch,
     gates: requiredGates.map((id) => ({ id, status: 'passed', exitCode: 0, log: `logs/${id}.log`, sha256: write(`logs/${id}.log`, `synthetic ${id} result\n`) })),
-    tauriRuntime: { status: 'passed', sourceCommit, executableSha256: native.executableSha256, report: 'reports/native.json', sha256: '' },
+    tauriRuntime: { status: 'passed', sourceCommit, executableSha256: native.executableSha256, report: 'reports/native.json', sha256: '', protectedSession: { report: protectedPath, sha256: '' } },
   };
   const saveNative = () => { verification.tauriRuntime.sha256 = write('reports/native.json', JSON.stringify(native)); };
+  const saveLatest = () => { verification.tauriRuntime.protectedSession.sha256 = write(protectedPath, JSON.stringify(latest)); };
   saveNative();
-  return { root, verification, native, write, saveNative };
+  saveLatest();
+  return { root, verification, native, latest, write, saveNative, saveLatest };
 }
 
 function runGuard(current) {
@@ -62,13 +72,13 @@ function runGuard(current) {
   return runPowerShell(command);
 }
 
-function runPowerShell(command) {
+function runPowerShell(command, scriptFile) {
   const environment = { ...process.env };
   // Do not inject PowerShell 7 module paths into Windows PowerShell 5.1.
   for (const key of Object.keys(environment)) {
     if (key.toLowerCase() === 'psmodulepath') delete environment[key];
   }
-  return spawnSync('powershell.exe', ['-NoLogo', '-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-Command', command], {
+  return spawnSync(process.env.RELEASE_EVIDENCE_POWERSHELL || 'powershell.exe', ['-NoLogo', '-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', ...(scriptFile ? ['-File', scriptFile] : ['-Command', command])], {
     encoding: 'utf8', timeout: 20_000, windowsHide: true, env: environment,
   });
 }
@@ -87,6 +97,11 @@ test('shared PowerShell release guard accepts complete evidence and rejects inco
       gate.sha256 = write(gate.log, '');
     }, true],
     ['complete native checks in another order', ({ native, saveNative }) => { native.checks.reverse(); saveNative(); }, true],
+    ['older completed success remains reusable when no newer attempt started', ({ native, latest, saveNative, saveLatest }) => {
+      native.generatedAt = '2020-01-01T00:00:01.100Z';
+      latest.startedAt = '2020-01-01T00:00:01.000Z'; latest.completedAt = '2020-01-01T00:00:02.000Z';
+      saveNative(); saveLatest();
+    }, true],
     ['metadata with passed:true only', ({ verification }) => { delete verification.gates; delete verification.tauriRuntime; }],
     ['missing gate', ({ verification }) => { verification.gates.pop(); }],
     ['duplicate gate with unchanged gate count', ({ verification }) => { verification.gates[1] = structuredClone(verification.gates[0]); }],
@@ -150,6 +165,11 @@ test('shared PowerShell release guard accepts complete evidence and rejects inco
     ['Boolean native IPC errors', ({ native, saveNative }) => { native.ipcErrors = false; saveNative(); }],
     ['empty native report', ({ native, saveNative }) => { Object.keys(native).forEach((key) => delete native[key]); saveNative(); }],
     ['native report hash mismatch', ({ verification }) => { verification.tauriRuntime.sha256 = '0'.repeat(64); }],
+    ['missing latest session hash binding', ({ verification }) => { delete verification.tauriRuntime.protectedSession; }],
+    ['latest session hash mismatch', ({ verification }) => { verification.tauriRuntime.protectedSession.sha256 = '0'.repeat(64); }],
+    ['latest session evidence path bypass', ({ verification }) => { verification.tauriRuntime.protectedSession.report = 'reports/old-protected-session.json'; }],
+    ['latest session evidence path array', ({ verification }) => { verification.tauriRuntime.protectedSession.report = [protectedPath]; }],
+    ['latest session changed after verification', ({ latest, write }) => { write(protectedPath, JSON.stringify({ ...latest, extra: 'newer evidence bytes' })); }],
     ['native executable hash mismatch', ({ write }) => { write(executablePath, 'tampered executable fixture'); }],
     ['missing native executable', ({ root }) => { rmSync(path.join(root, executablePath)); }],
     ['native executable metadata hash mismatch', ({ verification }) => { verification.tauriRuntime.executableSha256 = '0'.repeat(64); }],
@@ -179,6 +199,133 @@ test('shared PowerShell release guard accepts complete evidence and rejects inco
       } finally {
         removeFixture(current);
       }
+    });
+  }
+});
+
+test('latest started protected attempt is authoritative for both native and release consumers', async (t) => {
+  const cases = [
+    ['complete matching attempt', () => {}, true],
+    ['new attempt pending before launch', ({ latest }) => { latest.status = 'pending'; latest.passed = false; latest.processId = null; latest.completedAt = null; }],
+    ['new attempt fails before writing runtime', ({ latest }) => {
+      latest.sessionId = 'd'.repeat(32); latest.processId = 22222; latest.status = 'failed'; latest.passed = false;
+      latest.error = 'Application exited before WebView2 was ready.';
+    }],
+    ['new attempt fails during restoration', ({ latest }) => { latest.status = 'failed'; latest.stateRestored = false; latest.passed = false; }],
+    ['contradictory success with an error', ({ latest }) => { latest.error = 'reopen failed'; }],
+    ['missing latest report', ({ root }) => { rmSync(path.join(root, protectedPath)); }],
+    ['malformed latest report', ({ write }) => { write(protectedPath, '{'); }],
+    ['unknown latest schema', ({ latest }) => { latest.schema = 'unknown'; }],
+    ['missing latest schema', ({ latest }) => { delete latest.schema; }],
+    ['array latest status', ({ latest }) => { latest.status = ['passed']; }],
+    ['wrong version', ({ latest }) => { latest.version = '0.7.0'; }],
+    ...['sessionId', 'sourceCommit', 'executablePath', 'executableSha256'].flatMap((id) => [
+      [`missing latest ${id}`, ({ latest }) => { delete latest[id]; }],
+      [`different latest ${id}`, ({ latest }) => { latest[id] = 'different'; }],
+      [`array latest ${id}`, ({ latest }) => { latest[id] = [latest[id]]; }],
+    ]),
+    ...protectedSessionChecks.flatMap((id) => [
+      [`latest ${id} is missing`, ({ latest }) => { delete latest[id]; }],
+      [`latest ${id} is false`, ({ latest }) => { latest[id] = false; }],
+      [`latest ${id} has string type`, ({ latest }) => { latest[id] = 'true'; }],
+    ]),
+    ['missing latest process', ({ latest }) => { delete latest.processId; }],
+    ['different latest process', ({ latest }) => { latest.processId++; }],
+    ['string latest process', ({ latest }) => { latest.processId = '11111'; }],
+    ['zero process on both reports', ({ latest, native, saveNative }) => { latest.processId = 0; native.processId = 0; saveNative(); }],
+    ['missing native process', ({ native, saveNative }) => { delete native.processId; saveNative(); }],
+    ['missing start time', ({ latest }) => { delete latest.startedAt; }],
+    ['pending completion time', ({ latest }) => { latest.completedAt = null; }],
+    ['start time without timezone', ({ latest }) => { latest.startedAt = '2026-10-25T00:00:01.000'; }],
+    ['runtime before attempt began', ({ latest }) => { latest.startedAt = '2026-10-25T00:00:01.101Z'; }],
+    ['runtime after attempt completed', ({ latest }) => { latest.completedAt = '2026-10-25T00:00:01.099Z'; }],
+    ['native time without timezone', ({ native, saveNative }) => { native.generatedAt = '2026-10-25T00:00:01.100'; saveNative(); }],
+  ];
+  for (const [name, mutate, accepted = false] of cases) {
+    await t.test(name, () => {
+      const current = fixture();
+      try {
+        mutate(current);
+        // Refresh the hash deliberately: semantic failures must reject even if
+        // all hashes are consistent. Missing/malformed fixtures stay untouched.
+        if (!['missing latest report', 'malformed latest report'].includes(name)) current.saveLatest();
+        const nativeResult = runPowerShell([
+          "$ErrorActionPreference = 'Stop'", `. ${quotePowerShell(guard)}`,
+          `$native = Get-Content -LiteralPath ${quotePowerShell(path.join(current.root, 'reports/native.json'))} -Raw -Encoding UTF8 | ConvertFrom-Json`,
+          `Assert-NativeRuntimeReport -Root ${quotePowerShell(current.root)} -Native $native -SourceCommit '${sourceCommit}' -Version '0.7.1'`,
+        ].join('; '));
+        const releaseResult = runGuard(current);
+        for (const result of [nativeResult, releaseResult]) {
+          assert.ifError(result.error);
+          if (accepted) assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`);
+          else assert.notEqual(result.status, 0, `consumer accepted ${name}`);
+        }
+      } finally { removeFixture(current); }
+    });
+  }
+});
+
+test('desktop producer records a pending attempt before backup and preserves old runtime after early failure', async (t) => {
+  for (const scenario of ['application-exited', 'backup-interrupted', 'concurrent-blocked']) {
+    await t.test(scenario, () => {
+      const current = fixture();
+      try {
+        current.write('scripts/release-evidence.ps1', readFileSync(guard));
+        const producerSource = readFileSync(path.join(repositoryRoot, 'scripts/verify-desktop.ps1'), 'utf8').replace(/^\uFEFF/, '');
+        const folderExpression = "[Environment]::GetFolderPath('ApplicationData')";
+        assert.equal(producerSource.split(folderExpression).length - 1, 3, 'isolate every real AppData reference');
+        current.write('scripts/verify-desktop.ps1', '\uFEFF' + producerSource.replaceAll(folderExpression, quotePowerShell(path.join(current.root, 'appdata'))));
+        const userFile = 'appdata/com.zhishutai.desktop/state-v5.json';
+        current.write(userFile, 'synthetic user state; must survive failure');
+        // The production consumer uses this fixed runtime path; retain a fully
+        // sealed old success exactly as a retry on the same commit/EXE would.
+        const runtimePath = 'reports/tauri-runtime/0.7.1/runtime-smoke.json';
+        current.verification.tauriRuntime.report = runtimePath;
+        current.verification.tauriRuntime.sha256 = current.write(runtimePath, JSON.stringify(current.native));
+        const oldRuntimeHash = hash(readFileSync(path.join(current.root, runtimePath)));
+        const oldUserHash = hash(readFileSync(path.join(current.root, userFile)));
+        const wrapper = [
+          "$ErrorActionPreference = 'Stop'",
+          `function git { '${sourceCommit}' }`,
+          'function Get-Process { [CmdletBinding()] param([Parameter(Position=0)]$Name) }',
+          scenario === 'backup-interrupted'
+            ? "function Copy-Item { throw 'Synthetic interruption during backup' }"
+            : `function Start-Process { [CmdletBinding()] param($FilePath,$WorkingDirectory,$WindowStyle,[switch]$PassThru); Copy-Item -LiteralPath ${quotePowerShell(path.join(current.root, protectedPath))} -Destination ${quotePowerShell(path.join(current.root, 'observed-before-launch.json'))}; [pscustomobject]@{ Id=22222; HasExited=$true } }`,
+          ...(scenario === 'concurrent-blocked' ? [`$heldLock = [IO.File]::Open(${quotePowerShell(path.join(current.root, 'reports/tauri-runtime/protected-desktop-session.lock'))}, [IO.FileMode]::OpenOrCreate, [IO.FileAccess]::ReadWrite, [IO.FileShare]::None)`] : []),
+          `& ${quotePowerShell(path.join(current.root, 'scripts/verify-desktop.ps1'))} -Version '0.7.1'`,
+          'exit $LASTEXITCODE',
+        ].join('\n');
+        current.write('run-producer.ps1', '\uFEFF' + wrapper);
+        const result = runPowerShell(null, path.join(current.root, 'run-producer.ps1'));
+        assert.ifError(result.error);
+        assert.notEqual(result.status, 0, result.stdout);
+        const latest = JSON.parse(readFileSync(path.join(current.root, protectedPath), 'utf8').replace(/^\uFEFF/, ''));
+        if (scenario === 'concurrent-blocked') {
+          assert.deepEqual(latest, current.latest, 'a blocked concurrent caller must not replace the active session selector');
+          assert.equal(hash(readFileSync(path.join(current.root, userFile))), oldUserHash);
+          assert.equal(hash(readFileSync(path.join(current.root, runtimePath))), oldRuntimeHash);
+          assert.equal(runGuard(current).status, 0, 'a caller blocked before starting an attempt does not invalidate completed evidence');
+          return;
+        }
+        assert.notEqual(latest.sessionId, current.native.sessionId, `${result.stdout}\n${result.stderr}`);
+        assert.equal(latest.passed, false);
+        assert.equal(latest.status, scenario === 'backup-interrupted' ? 'pending' : 'failed');
+        if (scenario === 'application-exited') {
+          assert.match(latest.error, /Application exited before WebView2 was ready/);
+          const observed = JSON.parse(readFileSync(path.join(current.root, 'observed-before-launch.json'), 'utf8').replace(/^\uFEFF/, ''));
+          assert.equal(observed.status, 'pending', 'invalidate old success before starting the application');
+          assert.equal(latest.stateRestored, true);
+        }
+        assert.equal(hash(readFileSync(path.join(current.root, runtimePath))), oldRuntimeHash, 'old runtime stays intact for archival use');
+        assert.equal(hash(readFileSync(path.join(current.root, userFile))), oldUserHash, 'user state is restored or untouched');
+        const nativeResult = runPowerShell([
+          "$ErrorActionPreference = 'Stop'", `. ${quotePowerShell(guard)}`,
+          `$native = Get-Content -LiteralPath ${quotePowerShell(path.join(current.root, runtimePath))} -Raw -Encoding UTF8 | ConvertFrom-Json`,
+          `Assert-NativeRuntimeReport -Root ${quotePowerShell(current.root)} -Native $native -SourceCommit '${sourceCommit}' -Version '0.7.1'`,
+        ].join('; '));
+        assert.notEqual(nativeResult.status, 0, 'old native success must not authorize a new failed/pending attempt');
+        assert.notEqual(runGuard(current).status, 0, 'previous verification must also become unusable');
+      } finally { removeFixture(current); }
     });
   }
 });
