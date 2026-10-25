@@ -30,6 +30,9 @@ $results = @()
 foreach ($gate in $gates) {
   $started = Get-Date
   $logPath = Join-Path $logDir "$($gate.id).log"
+  # Successful tools such as cargo fmt can be silent. Preserve an empty log
+  # as real evidence too, rather than omitting its required SHA256 entirely.
+  [System.IO.File]::WriteAllText($logPath, '', [System.Text.UTF8Encoding]::new($false))
   Push-Location $gate.cwd
   try {
     & $gate.command @($gate.args) 2>&1 | Tee-Object -FilePath $logPath

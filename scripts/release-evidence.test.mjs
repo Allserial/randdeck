@@ -74,6 +74,10 @@ function removeFixture(current) {
 test('shared PowerShell release guard accepts complete evidence and rejects incomplete or mismatched evidence', async (t) => {
   const cases = [
     ['complete gate set and matching native executable', () => {}, true],
+    ['silent successful gate with a hashed empty log', ({ verification, write }) => {
+      const gate = verification.gates.find(({ id }) => id === 'cargo-fmt');
+      gate.sha256 = write(gate.log, '');
+    }, true],
     ['metadata with passed:true only', ({ verification }) => { delete verification.gates; delete verification.tauriRuntime; }],
     ['missing gate', ({ verification }) => { verification.gates.pop(); }],
     ['duplicate gate with unchanged gate count', ({ verification }) => { verification.gates[1] = structuredClone(verification.gates[0]); }],
