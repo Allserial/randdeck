@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { applyStatsDelta, createEmptyStats, createStatsDelta, resetStats } from "./stats";
+import { applyStatsDelta, createEmptyStats, createStatsDelta, normalizeStatsDelta, resetStats } from "./stats";
 
 describe("statistics ledger", () => {
   it("applies and reverts the same delta", () => {
@@ -14,5 +14,28 @@ describe("statistics ledger", () => {
     const next = resetStats(state, "range");
     expect(next.byMode.range.draws).toBe(0);
     expect(next.byMode.custom.draws).toBe(3);
+  });
+
+  it("counts prototype-named labels as own numeric entries and reverses them", () => {
+    const labels = ["constructor", "toString", "__proto__", "hasOwnProperty", "valueOf"];
+    const delta = createStatsDelta("custom", [{ value: 1, total: 1, faces: [], tags: labels }]);
+    labels.forEach((label) => {
+      expect(Object.hasOwn(delta.tags, label)).toBe(true);
+      expect(delta.tags[label]).toBe(1);
+    });
+    const recorded = applyStatsDelta(applyStatsDelta(createEmptyStats(), delta), delta);
+    labels.forEach((label) => expect(recorded.byMode.custom.tags[label]).toBe(2));
+    const reverted = applyStatsDelta(applyStatsDelta(recorded, delta, -1), delta, -1);
+    expect(reverted).toEqual(createEmptyStats());
+    expect(Object.getPrototypeOf(recorded.byMode.custom.tags)).toBe(Object.prototype);
+  });
+
+  it("repairs legacy inherited-method concatenation in retained deltas", () => {
+    const corrupted = JSON.parse('{"constructor":"function Object() { [native code] }111","__proto__":2,"toString":"function toString() { [native code] }1"}');
+    const delta = normalizeStatsDelta({ mode: "custom", draws: 3, values: { 1: 3 }, faces: {}, tags: corrupted });
+    expect(delta?.tags.constructor).toBe(3);
+    expect(delta?.tags.toString).toBe(1);
+    expect(Object.hasOwn(delta!.tags, "__proto__")).toBe(true);
+    expect(delta?.tags.__proto__).toBe(2);
   });
 });

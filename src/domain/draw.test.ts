@@ -1,8 +1,9 @@
 import { describe, expect, it } from "vitest";
 import { createDefaultState } from "../app/state";
-import { executeDraw, prepareDraw, prepareShuffle } from "./draw";
+import { executeDraw, getCoverageSourceValues, prepareDraw, prepareShuffle } from "./draw";
 import { SeededRandomSource } from "./random";
 import { SHUFFLE_ALGORITHM } from "./shuffle";
+import { applyStatsDelta, coverageForStats } from "./stats";
 
 describe("draw transactions", () => {
   it("excludes 3, 5 and 7 from a 1..10 range", () => {
@@ -43,6 +44,53 @@ describe("draw transactions", () => {
     expect(transaction.operation.kind).toBe("shuffle");
     expect(transaction.algorithmVersion).toBe(SHUFFLE_ALGORITHM);
     expect(transaction.results.map((result) => result.value).sort((left, right) => left - right)).toEqual([1, 2, 4, 5]);
+  });
+
+  it("shuffles the remaining pool independently of the ordinary draw count", () => {
+    const state = createDefaultState();
+    state.settings = { ...state.settings, min: 1, max: 4, count: 1, noDup: true };
+    const original = prepareDraw(state);
+    state.drawState = { ...state.drawState, poolFingerprint: original.poolFingerprint, usedValues: [1, 2] };
+    state.settings.count = 5;
+    expect(() => prepareDraw(state)).toThrow();
+    const plan = prepareShuffle(state);
+    expect(plan.count).toBe(2);
+    expect(plan.configSnapshot.count).toBe(5);
+    const transaction = executeDraw(plan, new SeededRandomSource(3));
+    expect(transaction.results.map((result) => result.value).sort()).toEqual([3, 4]);
+  });
+
+  it("keeps the coverage denominator after draws, count changes and pool exhaustion", () => {
+    const state = createDefaultState();
+    state.settings = { ...state.settings, min: 1, max: 4, count: 1, excludeInput: "4", noDup: true };
+    const original = prepareDraw(state);
+    const first = executeDraw(original, new SeededRandomSource(3));
+    state.drawState = { ...state.drawState, poolFingerprint: original.poolFingerprint, usedValues: first.usedAdded };
+    state.stats = applyStatsDelta(state.stats, first.statsDelta);
+    state.settings.count = 50;
+    const candidates = getCoverageSourceValues(state);
+    expect(candidates).toEqual([1, 2, 3]);
+    const coverage = coverageForStats(state.stats, "range", candidates);
+    expect(coverage).toMatchObject({ seen: 1, total: 3 });
+    expect(coverage.pct).toBeCloseTo(100 / 3);
+    const rest = executeDraw(prepareShuffle(state), new SeededRandomSource(4));
+    state.stats = applyStatsDelta(state.stats, rest.statsDelta);
+    state.drawState.usedValues = [1, 2, 3];
+    expect(() => prepareDraw(state)).toThrow();
+    expect(coverageForStats(state.stats, "range", getCoverageSourceValues(state))).toMatchObject({ seen: 3, total: 3, pct: 100 });
+  });
+
+  it("uses the configured custom tag filter and exclusions for coverage", () => {
+    const state = createDefaultState();
+    state.settings = { ...state.settings, mode: "custom", count: 50, noDup: true, excludeInput: "2", tagFilter: { selectedTags: ["A"], combine: "any" } };
+    state.pools.customEntries = [
+      { id: "1", value: 1, tags: ["A"] },
+      { id: "2", value: 2, tags: ["A"] },
+      { id: "3", value: 3, tags: ["B"] },
+    ];
+    expect(getCoverageSourceValues(state)).toEqual([1]);
+    state.settings.tagFilter.selectedTags = ["B"];
+    expect(getCoverageSourceValues(state)).toEqual([3]);
   });
 
   it("ignores leftover tagFilter in range mode but applies it in custom mode", () => {

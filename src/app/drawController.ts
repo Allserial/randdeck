@@ -14,6 +14,7 @@ let activeGeneration: Promise<string | null> | null = null;
 let activeCountdown: Promise<void> | null = null;
 let ceremonyCountdownTimer: number | undefined;
 let ceremonyRevealTimer: number | undefined;
+let operationGeneration = 0;
 
 interface PartialDrawContext {
   generatedIndices: number[];
@@ -21,6 +22,61 @@ interface PartialDrawContext {
   resultTemplate: Array<ReturnType<typeof snapshotState>["history"][number]["results"][number] | null>;
   retainedPinnedIndices: number[];
   retainedSelectedIndices?: number[];
+}
+
+let ceremonyPartial: PartialDrawContext | undefined;
+
+function commitGeneratedTransaction(transaction: DrawTransaction, partial?: PartialDrawContext): void {
+  const current = useAppStore.getState();
+  current.commitTransaction(transaction);
+  if (partial) {
+    current.setResultInteraction({
+      transactionId: transaction.id,
+      selectedIndices: partial.retainedSelectedIndices ?? [],
+      pinnedIndices: partial.retainedPinnedIndices,
+      rollingIndices: null,
+    });
+  } else {
+    current.clearResultInteraction();
+  }
+}
+
+// Both immediate generation and countdowns use the same plan and replacement accounting.
+function prepareGeneration(countOverride?: number, partial?: PartialDrawContext, shuffle = false) {
+  const snapshot = snapshotState();
+  const originalSettings = structuredClone(snapshot.settings);
+  if (countOverride) snapshot.settings = { ...snapshot.settings, count: countOverride };
+  if (partial && snapshot.settings.mode === "expression") {
+    snapshot.settings = { ...snapshot.settings, expression: { ...snapshot.settings.expression, evaluation: "batch" } };
+  }
+  const plan = shuffle ? prepareShuffle(snapshot) : prepareDraw(snapshot);
+  if (partial && snapshot.settings.noDup && plan.mode !== "expression") {
+    const retainedValues = new Set(partial.resultTemplate.flatMap((result) => result === null ? [] : [result.value]));
+    plan.candidateEntries = plan.candidateEntries.filter((entry) => !retainedValues.has(entry.value));
+    if (plan.candidateEntries.length < plan.count) {
+      throw runtimeError("errors.notEnough", { available: plan.candidateEntries.length, count: plan.count });
+    }
+  }
+  const transaction = executeDraw(plan, new WebCryptoRandomSource(), null);
+  if (partial) {
+    const replacements = transaction.results;
+    if (replacements.length !== partial.generatedIndices.length) throw runtimeError("errors.rerollMismatch");
+    let replacementIndex = 0;
+    transaction.results = partial.resultTemplate.map((result) => result ?? replacements[replacementIndex++]);
+    transaction.configSnapshot = {
+      ...transaction.configSnapshot,
+      count: partial.resultTemplate.length,
+      ...(originalSettings.mode === "expression" ? {
+        expression: { ...transaction.configSnapshot.expression, evaluation: originalSettings.expression.evaluation },
+      } : {}),
+    };
+    transaction.operation = {
+      kind: "reroll",
+      sourceTransactionId: partial.sourceTransactionId,
+      rerolledIndices: partial.generatedIndices,
+    };
+  }
+  return { snapshot, transaction };
 }
 
 export function effectiveMotion(): "instant" | "standard" | "ceremony" {
@@ -60,6 +116,8 @@ export async function publishCurrentDisplay(overrides: { hidden?: boolean } = {}
     locale: state.ui.locale,
     summary,
     theme: state.settings.appearance.theme,
+    appearance: { motion: state.settings.appearance.motion, particles: state.settings.appearance.particles },
+    windowMode: state.settings.desktop.displayMode,
     animationToken:
       ceremony.phase !== "idle"
         ? `ceremony-${ceremony.targetTransaction?.id || "active"}`
@@ -79,14 +137,17 @@ export async function publishCurrentDisplay(overrides: { hidden?: boolean } = {}
 function startCeremonyReveal(
   transaction: DrawTransaction,
   soundProfile: SoundProfile,
-  muted: boolean
+  generation: number,
+  partial?: PartialDrawContext
 ): void {
+  ceremonyPartial = partial;
   const store = useAppStore.getState();
   const total = transaction.results.length;
 
   const finishReveal = () => {
+    if (generation !== operationGeneration) return;
     ceremonyRevealTimer = undefined;
-    useAppStore.getState().commitTransaction(transaction);
+    commitGeneratedTransaction(transaction, partial);
     useAppStore.getState().setCeremony({
       phase: "finished",
       remainingSeconds: 0,
@@ -103,7 +164,7 @@ function startCeremonyReveal(
     revealedCount: 1,
     targetTransaction: transaction,
   });
-  void playDrawSound(soundProfile, muted, "lock");
+  void playDrawSound(soundProfile, useAppStore.getState().settings.muted, "lock");
   void publishCurrentDisplay();
 
   if (total <= 1) {
@@ -112,9 +173,10 @@ function startCeremonyReveal(
   }
 
   ceremonyRevealTimer = window.setInterval(() => {
+    if (generation !== operationGeneration) return;
     revealed += 1;
     useAppStore.getState().setCeremony({ revealedCount: revealed });
-    void playDrawSound(soundProfile, muted, "lock");
+    void playDrawSound(soundProfile, useAppStore.getState().settings.muted, "lock");
     void publishCurrentDisplay();
 
     if (revealed >= total) {
@@ -126,52 +188,15 @@ function startCeremonyReveal(
 
 function runGeneration(countOverride?: number, partial?: PartialDrawContext, shuffle = false): Promise<string | null> {
   if (activeGeneration) return activeGeneration;
-  activeGeneration = (async () => {
-    const store = useAppStore.getState();
-    if (store.isDrawing || store.ceremony.phase !== "idle") return null;
+  const store = useAppStore.getState();
+  if (activeCountdown || store.isDrawing || store.ceremony.phase !== "idle") return Promise.resolve(null);
+  const generation = ++operationGeneration;
+  const pending = (async () => {
     store.setError("");
     try {
-      const snapshot = snapshotState();
-      const originalSettings = structuredClone(snapshot.settings);
-      if (countOverride) snapshot.settings = { ...snapshot.settings, count: countOverride };
-      if (partial && snapshot.settings.mode === "expression") {
-        snapshot.settings = { ...snapshot.settings, expression: { ...snapshot.settings.expression, evaluation: "batch" } };
-      }
-      const plan = shuffle ? prepareShuffle(snapshot) : prepareDraw(snapshot);
-      if (partial && snapshot.settings.noDup) {
-        const retainedValues = new Set(
-          partial.resultTemplate.flatMap((result) => (result === null ? [] : [result.value]))
-        );
-        plan.candidateEntries = plan.candidateEntries.filter((entry) => !retainedValues.has(entry.value));
-        if (plan.candidateEntries.length < plan.count) {
-          throw runtimeError("errors.notEnough", { available: plan.candidateEntries.length, count: plan.count });
-        }
-      }
-      const transaction = executeDraw(plan, new WebCryptoRandomSource(), null);
-      if (partial) {
-        const replacements = transaction.results;
-        if (replacements.length !== partial.generatedIndices.length) throw runtimeError("errors.rerollMismatch");
-        let replacementIndex = 0;
-        transaction.results = partial.resultTemplate.map((result) => result ?? replacements[replacementIndex++]);
-        transaction.configSnapshot = {
-          ...transaction.configSnapshot,
-          count: partial.resultTemplate.length,
-          ...(originalSettings.mode === "expression"
-            ? {
-                expression: {
-                  ...transaction.configSnapshot.expression,
-                  evaluation: originalSettings.expression.evaluation,
-                },
-              }
-            : {}),
-        };
-        transaction.operation = {
-          kind: "reroll",
-          sourceTransactionId: partial.sourceTransactionId,
-          rerolledIndices: partial.generatedIndices,
-        };
-      }
+      const { snapshot, transaction } = prepareGeneration(countOverride, partial, shuffle);
       transaction.receipt = await createReceipt(transaction);
+      if (generation !== operationGeneration) return null;
 
       const motion = effectiveMotion();
       const isCeremonyMode = motion === "ceremony" && !partial && !shuffle;
@@ -192,13 +217,13 @@ function runGeneration(countOverride?: number, partial?: PartialDrawContext, shu
               }
         );
         store.setDrawing(true);
-        void playDrawSound(snapshot.settings.appearance.soundProfile, snapshot.settings.muted, "start");
+        void playDrawSound(snapshot.settings.appearance.soundProfile, useAppStore.getState().settings.muted, "start");
         void publishCurrentDisplay({ hidden: true });
         await new Promise((resolve) => window.setTimeout(resolve, duration));
+        if (generation !== operationGeneration) return null;
       }
 
       if (isCeremonyMode) {
-        cancelCeremony();
         const sequential = snapshot.settings.appearance.sequentialReveal !== false;
         const total = transaction.results.length;
         const current = useAppStore.getState();
@@ -207,39 +232,28 @@ function runGeneration(countOverride?: number, partial?: PartialDrawContext, shu
         current.setResultInteraction({ rollingIndices: null });
 
         if (sequential && total > 1) {
-          startCeremonyReveal(transaction, snapshot.settings.appearance.soundProfile, snapshot.settings.muted);
+          startCeremonyReveal(transaction, snapshot.settings.appearance.soundProfile, generation);
           return transaction.id;
         }
 
-        current.commitTransaction(transaction);
-        current.clearResultInteraction();
+        commitGeneratedTransaction(transaction);
         current.setCeremony({
           phase: "finished",
           remainingSeconds: 0,
           revealedCount: total,
           targetTransaction: transaction,
         });
-        void playDrawSound(snapshot.settings.appearance.soundProfile, snapshot.settings.muted, "lock");
+        void playDrawSound(snapshot.settings.appearance.soundProfile, useAppStore.getState().settings.muted, "lock");
         await publishCurrentDisplay();
         return transaction.id;
       }
 
-      const current = useAppStore.getState();
-      current.commitTransaction(transaction);
-      if (partial) {
-        current.setResultInteraction({
-          transactionId: transaction.id,
-          selectedIndices: partial.retainedSelectedIndices ?? [],
-          pinnedIndices: partial.retainedPinnedIndices,
-          rollingIndices: null,
-        });
-      } else {
-        current.clearResultInteraction();
-      }
-      void playDrawSound(snapshot.settings.appearance.soundProfile, snapshot.settings.muted, "lock");
+      commitGeneratedTransaction(transaction, partial);
+      void playDrawSound(snapshot.settings.appearance.soundProfile, useAppStore.getState().settings.muted, "lock");
       await publishCurrentDisplay();
       return transaction.id;
     } catch (error) {
+      if (generation !== operationGeneration) return null;
       const current = useAppStore.getState();
       current.setDrawing(false);
       current.setPreviewResults([]);
@@ -248,12 +262,13 @@ function runGeneration(countOverride?: number, partial?: PartialDrawContext, shu
       return null;
     }
   })().finally(() => {
-    activeGeneration = null;
+    if (activeGeneration === pending) activeGeneration = null;
   });
-  return activeGeneration;
+  activeGeneration = pending;
+  return pending;
 }
 
-export function generateDraw(countOverride?: number): Promise<string | null> {
+function pinnedGenerationContext(countOverride?: number): { count?: number; partial?: PartialDrawContext } | null {
   const state = useAppStore.getState();
   const interaction = state.resultInteraction;
   const pinsAreCurrent = interaction.transactionId === state.drawState.lastTransactionId && state.currentResults.length > 0
@@ -262,7 +277,7 @@ export function generateDraw(countOverride?: number): Promise<string | null> {
     ? [...new Set(interaction.pinnedIndices)].filter((index) => index >= 0 && index < state.currentResults.length).sort((a, b) => a - b)
     : [];
 
-  if (!pinnedSourceIndices.length) return runGeneration(countOverride);
+  if (!pinnedSourceIndices.length) return { count: countOverride };
 
   const targetCount =
     state.settings.mode === "expression" && state.settings.expression.evaluation === "single"
@@ -274,7 +289,7 @@ export function generateDraw(countOverride?: number): Promise<string | null> {
         ? runtimeError("errors.fixedAll").message
         : runtimeError("errors.fixedTooMany", { fixed: pinnedSourceIndices.length, count: targetCount }).message
     );
-    return Promise.resolve(null);
+    return null;
   }
 
   const resultTemplate = Array.from({ length: targetCount }, () => null) as PartialDrawContext["resultTemplate"];
@@ -293,12 +308,17 @@ export function generateDraw(countOverride?: number): Promise<string | null> {
   const retainedPinnedIndices = resultTemplate.flatMap((result, index) => (result === null ? [] : [index]));
   const generatedIndices = resultTemplate.flatMap((result, index) => (result === null ? [index] : []));
 
-  return runGeneration(generatedIndices.length, {
+  return { count: generatedIndices.length, partial: {
     generatedIndices,
     sourceTransactionId: state.drawState.lastTransactionId!,
     resultTemplate,
     retainedPinnedIndices,
-  });
+  } };
+}
+
+export function generateDraw(countOverride?: number): Promise<string | null> {
+  const context = pinnedGenerationContext(countOverride);
+  return context ? runGeneration(context.count, context.partial) : Promise.resolve(null);
 }
 
 export function generateShuffle(): Promise<string | null> {
@@ -332,23 +352,24 @@ export function rerollDraw(indices: number[]): Promise<string | null> {
 export async function startCountdownCeremony(seconds: number): Promise<void> {
   const store = useAppStore.getState();
   if (activeCountdown || activeGeneration || store.isDrawing || store.ceremony.phase !== "idle") return;
+  const context = pinnedGenerationContext();
+  if (!context) return;
+  const generation = ++operationGeneration;
+  store.setError("");
 
-  activeCountdown = (async () => {
-    cancelCeremony();
-
-    const snapshot = snapshotState();
+  const pending = (async () => {
+    let snapshot;
     let transaction;
     try {
-      const plan = prepareDraw(snapshot);
-      transaction = executeDraw(plan, new WebCryptoRandomSource(), null);
+      ({ snapshot, transaction } = prepareGeneration(context.count, context.partial));
       transaction.receipt = await createReceipt(transaction);
     } catch (error) {
-      store.setError(messageFromUnknown(error, "errors.drawFailed"));
+      if (generation === operationGeneration) store.setError(messageFromUnknown(error, "errors.drawFailed"));
       return;
     }
 
-    // 在 createReceipt 异步微任务完成后二次校验
-    if (!activeCountdown || useAppStore.getState().ceremony.phase !== "idle") return;
+    if (generation !== operationGeneration) return;
+    ceremonyPartial = context.partial;
 
     // 1. 设置倒计时阶段，启动低音节奏床鼓点与整秒 tick
     store.setCeremony({
@@ -357,8 +378,8 @@ export async function startCountdownCeremony(seconds: number): Promise<void> {
       revealedCount: 0,
       targetTransaction: transaction,
     });
-    void startCountdownDrums(snapshot.settings.muted);
-    void playCountdownTick(snapshot.settings.muted);
+    void startCountdownDrums(useAppStore.getState().settings.muted);
+    void playCountdownTick(useAppStore.getState().settings.muted);
     void publishCurrentDisplay();
 
     const motion = effectiveMotion();
@@ -367,6 +388,7 @@ export async function startCountdownCeremony(seconds: number): Promise<void> {
     // 倒计时每秒触发
     let currentSec = seconds;
     ceremonyCountdownTimer = window.setInterval(() => {
+      if (generation !== operationGeneration) return;
       currentSec -= 1;
       if (currentSec > 0) {
         useAppStore.getState().setCeremony({ remainingSeconds: currentSec });
@@ -384,36 +406,43 @@ export async function startCountdownCeremony(seconds: number): Promise<void> {
 
       if (instant || !sequential) {
         // 即时/减少动态模式或关闭逐个揭示：倒计时结束后一次性揭晓
-        useAppStore.getState().commitTransaction(transaction);
+        commitGeneratedTransaction(transaction, context.partial);
         useAppStore.getState().setCeremony({
           phase: "finished",
           remainingSeconds: 0,
           revealedCount: transaction.results.length,
           targetTransaction: transaction,
         });
-        void playDrawSound(snapshot.settings.appearance.soundProfile, snapshot.settings.muted, "lock");
+        void playDrawSound(snapshot.settings.appearance.soundProfile, useAppStore.getState().settings.muted, "lock");
         void publishCurrentDisplay();
         return;
       }
 
-      startCeremonyReveal(transaction, snapshot.settings.appearance.soundProfile, snapshot.settings.muted);
+      startCeremonyReveal(transaction, snapshot.settings.appearance.soundProfile, generation, context.partial);
     }, 1000);
   })().finally(() => {
-    activeCountdown = null;
+    if (activeCountdown === pending) activeCountdown = null;
   });
 
-  return activeCountdown;
+  activeCountdown = pending;
+  return pending;
 }
 
 // Esc 中断或离开：终止仪式，停止音效，不留答案、不写历史
 export function cancelCeremony(): void {
+  operationGeneration += 1;
+  activeGeneration = null;
   activeCountdown = null;
+  ceremonyPartial = undefined;
   window.clearInterval(ceremonyCountdownTimer);
   window.clearInterval(ceremonyRevealTimer);
   window.clearTimeout(ceremonyRevealTimer);
   ceremonyCountdownTimer = undefined;
   ceremonyRevealTimer = undefined;
   stopCountdownDrums();
+  useAppStore.getState().setDrawing(false);
+  useAppStore.getState().setPreviewResults([]);
+  useAppStore.getState().setResultInteraction({ rollingIndices: null });
   useAppStore.getState().resetCeremony();
   void publishCurrentDisplay();
 }
@@ -428,7 +457,7 @@ export function skipCeremonyReveal(): void {
   stopCountdownDrums();
 
   const tx = store.ceremony.targetTransaction;
-  store.commitTransaction(tx);
+  commitGeneratedTransaction(tx, ceremonyPartial);
   store.setCeremony({
     phase: "finished",
     revealedCount: tx.results.length,

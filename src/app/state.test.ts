@@ -3,6 +3,8 @@ import { buildBackup, createDefaultState, migrateToV5, parseBackup } from "./sta
 import { useAppStore } from "./store";
 import { parseRuntimeMessage } from "../domain/runtimeMessage";
 import { detectLocaleFromLanguages, normalizePersistedLocale } from "../i18n/locale";
+import { executeDraw, prepareDraw } from "../domain/draw";
+import { SeededRandomSource } from "../domain/random";
 
 describe("AppState v5 migration", () => {
   it("detects a fresh locale from browser language preferences", () => {
@@ -28,6 +30,53 @@ describe("AppState v5 migration", () => {
 
   it("preserves a persisted supported locale", () => {
     expect(migrateToV5(createDefaultState("en-US"), "当前 v5").ui.locale).toBe("en-US");
+  });
+
+  it("repairs pre-fix prototype-label deltas and recovers retained tag evidence", () => {
+    const source = createDefaultState();
+    source.settings = { ...source.settings, mode: "custom", count: 1 };
+    source.pools.customEntries = [{ id: "1", value: 1, tags: ["constructor", "__proto__"] }];
+    const transaction = executeDraw(prepareDraw(source), new SeededRandomSource(1));
+    source.stats.byMode.custom.draws = 1;
+    source.stats.byMode.custom.values = { 1: 1 };
+    source.history = [{
+      id: "old-history", transactionId: transaction.id, createdAt: transaction.createdAt, mode: transaction.mode,
+      config: transaction.configSnapshot, results: transaction.results, legacy: false,
+      statsDelta: { ...transaction.statsDelta, tags: JSON.parse('{"constructor":"function Object() { [native code] }1"}') },
+    }];
+    const migrated = migrateToV5(source, "旧 v5 标签故障");
+    expect(migrated.history[0].statsDelta?.tags.constructor).toBe(1);
+    expect(migrated.stats.byMode.custom.tags.constructor).toBe(1);
+    expect(Object.hasOwn(migrated.stats.byMode.custom.tags, "__proto__")).toBe(true);
+    expect(migrated.stats.byMode.custom.tags.__proto__).toBe(1);
+    expect(parseBackup(JSON.parse(JSON.stringify(buildBackup(migrated)))).stats.byMode.custom.tags).toEqual(migrated.stats.byMode.custom.tags);
+    expect(Object.keys(source.stats.byMode.custom.tags)).toEqual([]);
+  });
+
+  it("does not reconstruct prototype-tag counts from transactions preceding a stats reset", () => {
+    const source = createDefaultState();
+    source.stats.byMode.custom.resetAt = "2026-01-02T00:00:00.000Z";
+    source.history = [{
+      id: "old-history", transactionId: "old-transaction", createdAt: "2026-01-01T00:00:00.000Z", mode: "custom",
+      config: source.settings, results: [{ value: 1, total: 1, faces: [], tags: ["constructor"] }], legacy: false,
+    }];
+    expect(Object.keys(migrateToV5(source).stats.byMode.custom.tags)).toEqual([]);
+  });
+
+  it("repairs only newly rolled labels when a reroll receipt also includes retained cards", () => {
+    const source = createDefaultState();
+    source.stats.byMode.custom.draws = 1;
+    source.history = [{
+      id: "reroll-history", transactionId: "reroll-transaction", createdAt: "2026-01-01T00:00:00.000Z", mode: "custom",
+      config: source.settings,
+      results: [1, 2].map((value) => ({ value, total: value, faces: [], tags: ["__proto__"] })),
+      operation: { kind: "reroll", sourceTransactionId: "previous", rerolledIndices: [1] },
+      statsDelta: { mode: "custom", draws: 1, values: { 2: 1 }, faces: {}, tags: {} },
+      legacy: false,
+    }];
+    const migrated = migrateToV5(source);
+    expect(migrated.stats.byMode.custom.tags.__proto__).toBe(1);
+    expect(migrated.history[0].statsDelta?.tags.__proto__).toBe(1);
   });
 
   it("resets all mode counts to 5 when an old v5 state has no count memory", () => {

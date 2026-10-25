@@ -1,6 +1,6 @@
 [package]
 name = "randdeck"
-version = "0.7.0"
+version = "0.7.1"
 description = "Offline random draw workbench for Windows"
 authors = ["RandDeck contributors"]
 license = "MIT"

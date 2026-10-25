@@ -415,6 +415,7 @@
     "deleteRule": "Delete rule {{label}}"
   },
   "display": {
+    "dragWindow": "Drag to move the display window",
     "close": "Close display window",
     "waiting": "Waiting for the main window to generate a result"
   },
@@ -441,6 +442,8 @@
     "localSave": "Local save failed: {{message}}",
     "restoreFailed": "Backup could not be restored: {{message}}",
     "importFailed": "Import failed: {{message}}",
+    "poolImportFormat": "Use CSV with value/tags (数字/标签) columns, or JSON containing an entry array, entries, or pools.customEntries",
+    "poolRowsLimit": "Custom pools support at most {{count}} rows",
     "rowInvalid": "Row {{row}} failed validation",
     "needNumber": "Add at least one number",
     "noNumbers": "No valid numbers were found",

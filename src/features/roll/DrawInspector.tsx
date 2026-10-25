@@ -54,6 +54,7 @@ function CountStepper({ count, onChange }: { count: number; onChange: (value: nu
   const { t } = useTranslation();
   const [draft, setDraft] = useState(String(count));
   const [error, setError] = useState("");
+  const skipBlurCommit = useRef(false);
 
   const commit = () => {
     const value = Number(draft.trim());
@@ -92,20 +93,29 @@ function CountStepper({ count, onChange }: { count: number; onChange: (value: nu
           min="1"
           max="50"
           value={draft}
+          onFocus={() => { skipBlurCommit.current = false; }}
           onChange={(event) => {
             setDraft(event.target.value);
             setError("");
           }}
-          onBlur={commit}
+          onBlur={() => {
+            if (skipBlurCommit.current) {
+              skipBlurCommit.current = false;
+              return;
+            }
+            commit();
+          }}
           onKeyDown={(event) => {
             if (event.key === "Enter") {
               event.preventDefault();
               commit();
+              skipBlurCommit.current = true;
               event.currentTarget.blur();
             } else if (event.key === "Escape") {
               event.preventDefault();
               setDraft(String(count));
               setError("");
+              skipBlurCommit.current = true;
               event.currentTarget.blur();
             }
           }}

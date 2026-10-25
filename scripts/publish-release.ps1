@@ -1,5 +1,6 @@
-param(
-  [string]$Version = "0.7.0",
+﻿param(
+  [string]$Version = "0.7.1",
+  [switch]$Candidate,
   [switch]$Force
 )
 
@@ -10,6 +11,7 @@ $releaseRoot = Join-Path $releaseBase $Version
 $portableSource = Join-Path $root "src-tauri\target\release\randdeck.exe"
 $nsisDir = Join-Path $root "src-tauri\target\release\bundle\nsis"
 $verificationPath = Join-Path $root "reports\v$Version-verification.json"
+. (Join-Path $PSScriptRoot 'release-evidence.ps1')
 
 function Get-SafeRelativePath([string]$BasePath, [string]$TargetPath) {
   $baseFull = [System.IO.Path]::GetFullPath($BasePath).TrimEnd("\") + "\"
@@ -34,7 +36,8 @@ $package = Get-Content -Raw -LiteralPath (Join-Path $root "package.json") | Conv
 $tauriConfig = Get-Content -Raw -LiteralPath (Join-Path $root "src-tauri\tauri.conf.json") | ConvertFrom-Json
 $cargoText = Get-Content -Raw -LiteralPath (Join-Path $root "src-tauri\Cargo.toml")
 $cargoVersionMatch = [regex]::Match($cargoText, '(?m)^version\s*=\s*"([^"]+)"')
-if ($branch -ne "main") { throw "正式发布只能从 main 分支生成，当前分支：$branch" }
+if ($branch -ne "main" -and !$Candidate) { throw "正式发布只能从 main 分支生成，当前分支：$branch。仅本地候选包可显式使用 -Candidate。" }
+Assert-ReleaseVerification -Root $root -Verification $verification -Version $Version -SourceCommit $sourceCommit -SourceBranch $branch
 if ($verification.schema -ne "zhishutai.verification.v1") { throw "发布验证报告 schema 不兼容。" }
 if ([string]$verification.version -ne $Version) { throw "发布验证报告版本与目标版本不一致。" }
 if ([string]$verification.sourceCommit -ne $sourceCommit) { throw "发布验证报告不属于当前源码 commit。" }
@@ -155,6 +158,7 @@ $manifest = [pscustomobject]@{
   sourceCommit = $sourceCommit
   releaseTag = "v$Version"
   branch = $branch
+  candidate = [bool]$Candidate
   cleanSource = $true
   signed = [bool]$releaseSigned
   smartScreenNote = if ($releaseSigned) { "已使用本机证书进行 Authenticode 签名。" } else { "未进行代码签名，Windows SmartScreen 可能显示未知发布者。" }

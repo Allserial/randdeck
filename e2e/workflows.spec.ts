@@ -157,7 +157,7 @@ test("审计回执、完整备份和展示窗口可离线传递当前结果", as
   await page.getByLabel("主导航").getByRole("button", { name: /设置/ }).click();
   const backupDownload = page.waitForEvent("download");
   await page.getByRole("button", { name: /导出完整备份/ }).click();
-  expect((await backupDownload).suggestedFilename()).toBe("掷数台-v0.7.0-完整备份.json");
+  expect((await backupDownload).suggestedFilename()).toBe("掷数台-v0.7.1-完整备份.json");
 });
 
 test("语言切换、重启持久化、展示窗口与备份恢复保持同步", async ({ page, context }) => {
@@ -194,7 +194,7 @@ test("语言切换、重启持久化、展示窗口与备份恢复保持同步",
   const backupDownload = page.waitForEvent("download");
   await page.getByRole("button", { name: "Export full backup" }).click();
   const download = await backupDownload;
-  expect(download.suggestedFilename()).toBe("RandDeck-v0.7.0-full-backup.json");
+  expect(download.suggestedFilename()).toBe("RandDeck-v0.7.1-full-backup.json");
   const stream = await download.createReadStream();
   const chunks: Buffer[] = [];
   for await (const chunk of stream) chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));

@@ -1,5 +1,25 @@
 # 更新日志 (Changelog)
 
+## 0.7.1 - 2026-10-25
+
+### 中文
+
+- 修复特殊文本标签导致统计异常和存档失败的问题，并恢复旧存档中的受影响统计。
+- 修复跨重置撤销对新统计和已抽记录的影响、洗牌数量校验，以及抽后移除时的覆盖进度。
+- 修复仪式开场取消、倒计时固定卡片、逐张揭示期间静音、数量输入 Esc 取消和批次备注关联。
+- 修复 CSV 标签与数值往返导入、根数组 JSON 导入及密集骰子结果裁切。
+- 主窗关闭前完成保存并退出全部窗口；展示窗新增拖动入口，保留鼠标穿透，同步初始模式、主题、动态与粒子偏好，窗口标题随语言切换。
+- 发布门禁校验完整检查明细和原生证据哈希；便携包内附依赖许可证清单，发布清单更新后自动重建并核验 SHA256 校验文件。
+
+### English
+
+- Fixed special text labels corrupting statistics and blocking saved state; affected legacy statistics are recovered during loading.
+- Fixed undo across reset boundaries, shuffle count validation, and coverage progress when drawn values are removed.
+- Fixed ceremony cancellation, countdown pin preservation, muting during sequential reveals, Esc while editing draw counts, and batch-note association.
+- Fixed CSV value/tag round trips, root-array JSON imports, and clipped numbers in dense dice layouts.
+- The main window saves before closing all application windows. The display now provides a drag handle, preserves click-through, synchronizes mode and appearance preferences, and updates its localized title.
+- Release gates now require complete check details and matching native evidence hashes. Portable bundles include dependency license reports, and updated manifests regenerate and verify upload checksums.
+
 ## 0.7.0 - 2026-10-25
 
 ### English

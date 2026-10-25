@@ -28,9 +28,9 @@ function candidateSpec(state: AppState, entries: WeightedEntry[]): CandidateSpec
   return base;
 }
 
-export function prepareDraw(state: AppState): DrawPlan {
+function preparePlan(state: AppState, purpose: "draw" | "shuffle" | "coverage"): DrawPlan {
   const fingerprint = candidateFingerprint(state);
-  const used = state.settings.noDup && state.drawState.poolFingerprint === fingerprint ? new Set(state.drawState.usedValues) : new Set<number>();
+  const used = purpose !== "coverage" && state.settings.noDup && state.drawState.poolFingerprint === fingerprint ? new Set(state.drawState.usedValues) : new Set<number>();
   const configSnapshot = structuredClone(state.settings);
   const poolsSnapshot = structuredClone(state.pools);
   if (state.settings.mode === "expression") {
@@ -61,16 +61,24 @@ export function prepareDraw(state: AppState): DrawPlan {
   const selectedTags = state.settings.mode === "custom" ? state.settings.tagFilter.selectedTags : [];
   const candidates = filterWeightedEntries(sourceEntries, { selectedTags, combine: state.settings.tagFilter.combine, exclusions: excluded.tokens, used });
   if (!candidates.length) throw runtimeError(state.settings.noDup && used.size ? "errors.poolExhausted" : "errors.noCandidates");
-  const count = clampCount(state.settings.count, state.settings.noDup ? candidates.length : 50);
-  if (state.settings.noDup && state.settings.count > candidates.length) throw runtimeError("errors.notEnoughAvailable", { count: candidates.length });
+  const count = purpose === "draw" ? clampCount(state.settings.count, state.settings.noDup ? candidates.length : 50) : candidates.length;
+  if (purpose === "draw" && state.settings.noDup && state.settings.count > candidates.length) throw runtimeError("errors.notEnoughAvailable", { count: candidates.length });
   return { mode: state.settings.mode, count, configSnapshot, poolsSnapshot, poolFingerprint: fingerprint, sourceCount: sourceEntries.length, candidateEntries: candidates, candidateSpec: candidateSpec(state, sourceEntries), presetId: state.drawState.activePresetId, operationKind: "draw" };
+}
+
+export function prepareDraw(state: AppState): DrawPlan {
+  return preparePlan(state, "draw");
 }
 
 export function prepareShuffle(state: AppState): DrawPlan {
   if (state.settings.mode === "expression") throw runtimeError("errors.expressionShuffleUnsupported");
-  const plan = prepareDraw(state);
+  const plan = preparePlan(state, "shuffle");
   if (plan.candidateEntries.length > SHUFFLE_LIMIT) throw runtimeError("errors.shuffleLimit", { count: SHUFFLE_LIMIT });
   return { ...plan, count: plan.candidateEntries.length, operationKind: "shuffle" };
+}
+
+export function getCoverageSourceValues(state: AppState): number[] {
+  return preparePlan(state, "coverage").candidateEntries.map((entry) => entry.value);
 }
 
 export function executeDraw(plan: DrawPlan, source: RandomSource, session?: DrawSession | null): DrawTransaction {

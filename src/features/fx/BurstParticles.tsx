@@ -1,5 +1,6 @@
 import { useEffect, useRef } from "react";
 import { useAppStore } from "../../app/store";
+import type { AppearanceSettings } from "../../domain/types";
 
 export interface BurstOrigin {
   x: number;
@@ -32,16 +33,17 @@ export function BurstParticles({
   token,
   origin,
   fullscreen = false,
+  appearance,
 }: {
   active: boolean;
   token: string;
   origin?: BurstOrigin | null;
   fullscreen?: boolean;
+  appearance?: Pick<AppearanceSettings, "theme" | "motion" | "particles">;
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const theme = useAppStore((state) => state.settings.appearance.theme);
-  const motion = useAppStore((state) => state.settings.appearance.motion);
-  const particlesEnabled = useAppStore((state) => state.settings.appearance.particles);
+  const storedAppearance = useAppStore((state) => state.settings.appearance);
+  const { theme, motion, particles: particlesEnabled } = appearance ?? storedAppearance;
 
   useEffect(() => {
     const canvas = canvasRef.current;

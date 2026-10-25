@@ -415,6 +415,7 @@
     "deleteRule": "删除规则 {{label}}"
   },
   "display": {
+    "dragWindow": "拖动以移动展示窗",
     "close": "关闭展示窗口",
     "waiting": "等待主窗口生成结果"
   },
@@ -441,6 +442,8 @@
     "localSave": "本地保存失败：{{message}}",
     "restoreFailed": "备份无法恢复：{{message}}",
     "importFailed": "导入失败：{{message}}",
+    "poolImportFormat": "请使用含数字/标签（value/tags）列的 CSV，或候选数组、entries、pools.customEntries 格式的 JSON",
+    "poolRowsLimit": "自定义池最多支持 {{count}} 行",
     "rowInvalid": "第 {{row}} 行未通过校验",
     "needNumber": "请至少添加一个数字",
     "noNumbers": "没有识别到有效数字",
