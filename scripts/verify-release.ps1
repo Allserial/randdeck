@@ -1,5 +1,5 @@
 ﻿param(
-  [string]$Version = "0.7.1"
+  [string]$Version = "0.7.2"
 )
 
 $ErrorActionPreference = "Continue"
@@ -23,7 +23,8 @@ $gates = @(
   @{ id = "cargo-fmt"; command = "cargo"; args = @("fmt", "--check"); cwd = (Join-Path $root "src-tauri") },
   @{ id = "cargo-test"; command = "cargo"; args = @("test"); cwd = (Join-Path $root "src-tauri") },
   @{ id = "cargo-check-locked"; command = "cargo"; args = @("check", "--locked"); cwd = (Join-Path $root "src-tauri") },
-  @{ id = "release-evidence-tests"; command = "node"; args = @("scripts/release-evidence.test.mjs"); cwd = $root }
+  @{ id = "release-evidence-tests"; command = "node"; args = @("scripts/release-evidence.test.mjs"); cwd = $root },
+  @{ id = "dependency-license-tests"; command = "node"; args = @("--test", "scripts/dependency-licenses.test.mjs"); cwd = $root }
 )
 
 $results = @()
@@ -57,15 +58,18 @@ $runtimePath = Join-Path $reportDir "tauri-runtime\$Version\runtime-smoke.json"
 $sourceCommit = (& git -C $root rev-parse HEAD 2>$null).Trim()
 $sourceBranch = (& git -C $root branch --show-current 2>$null).Trim()
 $runtime = if (Test-Path -LiteralPath $runtimePath) {
-  $runtimeReport = Get-Content -Raw -LiteralPath $runtimePath | ConvertFrom-Json
-  $runtimeHash = (Get-FileHash -LiteralPath $runtimePath -Algorithm SHA256).Hash.ToLowerInvariant()
-  $runtimePassed = $runtimeReport.passed -eq $true -and $runtimeReport.sourceCommit -eq $sourceCommit -and $runtimeReport.cleanSource -eq $true -and @($runtimeReport.consoleErrors).Count -eq 0
-  [pscustomobject]@{
-    status = if ($runtimePassed) { "passed" } else { "stale-or-failed" }
-    report = "reports/tauri-runtime/$Version/runtime-smoke.json"
-    sha256 = $runtimeHash
-    sourceCommit = $runtimeReport.sourceCommit
-    executableSha256 = $runtimeReport.executableSha256
+  try {
+    $runtimeReport = Get-Content -Raw -LiteralPath $runtimePath -Encoding UTF8 -ErrorAction Stop | ConvertFrom-Json -ErrorAction Stop
+    Assert-NativeRuntimeReport -Root $root -Native $runtimeReport -SourceCommit $sourceCommit
+    [pscustomobject]@{
+      status = "passed"
+      report = "reports/tauri-runtime/$Version/runtime-smoke.json"
+      sha256 = (Get-FileHash -LiteralPath $runtimePath -Algorithm SHA256 -ErrorAction Stop).Hash.ToLowerInvariant()
+      sourceCommit = $runtimeReport.sourceCommit
+      executableSha256 = $runtimeReport.executableSha256
+    }
+  } catch {
+    [pscustomobject]@{ status = "stale-or-failed"; report = "reports/tauri-runtime/$Version/runtime-smoke.json"; sha256 = $null; error = $_.Exception.Message }
   }
 } else {
   [pscustomobject]@{ status = "missing"; report = $null; sha256 = $null }

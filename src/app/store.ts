@@ -8,6 +8,7 @@ import { createPersistenceAdapter, loadPersistedState, savePersistedState, type 
 import { createRuntimeMessage, messageFromUnknown } from "../domain/runtimeMessage";
 
 interface RuntimeState {
+  isClosing: boolean;
   resultPresentation: ResultPresentationContext | null;
   hydrated: boolean;
   hydrationSource: string;
@@ -218,6 +219,7 @@ const defaultResultInteraction: ResultInteractionState = {
 
 export const useAppStore = create<AppStore>((set, get) => ({
   ...initial,
+  isClosing: false,
   resultPresentation: null,
   hydrated: false,
   hydrationSource: "pending",
@@ -231,6 +233,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
   ceremony: structuredClone(defaultCeremony),
   resultInteraction: structuredClone(defaultResultInteraction),
   updateSettings(updates) {
+    if (get().isClosing) return;
     const changesDrawConfig = Object.keys(updates).some((key) => !["appearance", "desktop", "muted", "timer"].includes(key));
     set((state) => {
       const currentMode = countMemoryMode(state.settings.mode);
@@ -263,6 +266,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
     queuePersistence();
   },
   updatePools(updates) {
+    if (get().isClosing) return;
     set((state) => ({
       pools: { ...state.pools, ...updates },
       ...(pinConfigurationChanged(state.resultPresentation, state.settings, state.settings, { ...state.pools, ...updates })
@@ -274,22 +278,27 @@ export const useAppStore = create<AppStore>((set, get) => ({
     queuePersistence();
   },
   setView(activeView) {
+    if (get().isClosing) return;
     set((state) => ({ ui: { ...state.ui, activeView }, revision: state.revision + 1 }));
     queuePersistence();
   },
   setLocale(locale) {
+    if (get().isClosing) return;
     set((state) => ({ ui: { ...state.ui, locale }, revision: state.revision + 1 }));
     queuePersistence(true);
   },
   setInspectorOpen(inspectorOpen) {
+    if (get().isClosing) return;
     set((state) => ({ ui: { ...state.ui, inspectorOpen }, revision: state.revision + 1 }));
     queuePersistence();
   },
   setInsightsTab(insightsTab) {
+    if (get().isClosing) return;
     set((state) => ({ ui: { ...state.ui, insightsTab, activeView: "insights" }, revision: state.revision + 1 }));
     queuePersistence();
   },
   toggleCompare(id) {
+    if (get().isClosing) return;
     set((state) => {
       const exists = state.ui.compareIds.includes(id);
       const compareIds = exists ? state.ui.compareIds.filter((item) => item !== id) : [...state.ui.compareIds, id].slice(-2);
@@ -298,10 +307,12 @@ export const useAppStore = create<AppStore>((set, get) => ({
     queuePersistence();
   },
   clearCompare() {
+    if (get().isClosing) return;
     set((state) => ({ ui: { ...state.ui, compareIds: [] }, revision: state.revision + 1 }));
     queuePersistence();
   },
   setCopyFormat(copyFormat) {
+    if (get().isClosing) return;
     set((state) => ({ ui: { ...state.ui, copyFormat }, revision: state.revision + 1 }));
     queuePersistence();
   },
@@ -336,6 +347,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
     set({ resultInteraction: structuredClone(defaultResultInteraction) });
   },
   syncPresentationPinScope(pinScopeKey, configUpdates) {
+    if (get().isClosing) return;
     set((state) => {
       if (!state.resultPresentation) return {};
       return {
@@ -349,6 +361,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
     });
   },
   commitTransaction(transaction) {
+    if (get().isClosing) return;
     set((state) => {
       const samePool = state.drawState.poolFingerprint === transaction.poolFingerprint;
       const poolEpoch = samePool ? state.drawState.poolEpoch || "legacy" : createId("pool");
@@ -376,6 +389,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
     queuePersistence(true);
   },
   revertTransaction(transactionId) {
+    if (get().isClosing) return false;
     const entry = get().history.find((item) => item.transactionId === transactionId);
     const storedRecord = get().sessionArchive.flatMap((session) => session.transactionRecords).find((record) => record.id === transactionId);
     const record = entry ? historyTransactionRecord(entry) : storedRecord;
@@ -400,10 +414,12 @@ export const useAppStore = create<AppStore>((set, get) => ({
     return true;
   },
   resetPool() {
+    if (get().isClosing) return;
     set((state) => ({ drawState: { ...state.drawState, poolFingerprint: "", poolEpoch: createId("pool"), usedValues: [] }, revision: state.revision + 1 }));
     queuePersistence(true);
   },
   deleteHistory(id) {
+    if (get().isClosing) return;
     set((state) => ({
       history: state.history.filter((entry) => entry.id !== id),
       ui: { ...state.ui, compareIds: state.ui.compareIds.filter((item) => item !== id) },
@@ -412,6 +428,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
     queuePersistence();
   },
   clearHistory() {
+    if (get().isClosing) return;
     set((state) => ({
       history: [],
       resultPresentation: null,
@@ -425,6 +442,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
     queuePersistence(true);
   },
   updateHistoryNote(id, note) {
+    if (get().isClosing) return;
     const trimmed = typeof note === "string" ? note.trim() : "";
     set((state) => ({
       history: state.history.map((entry) =>
@@ -437,10 +455,12 @@ export const useAppStore = create<AppStore>((set, get) => ({
     queuePersistence();
   },
   resetModeStats(mode) {
+    if (get().isClosing) return;
     set((state) => ({ stats: resetStats(state.stats, mode), revision: state.revision + 1 }));
     queuePersistence(true);
   },
   recallHistory(id) {
+    if (get().isClosing) return;
     const entry = get().history.find((item) => item.id === id);
     if (!entry) {
       get().setError(createRuntimeMessage("errors.recallMissing"));
@@ -458,6 +478,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
     }));
   },
   revertSession(id) {
+    if (get().isClosing) return false;
     const state = get();
     const session = state.sessionArchive.find((item) => item.id === id);
     if (!session) return false;
@@ -470,6 +491,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
     return true;
   },
   deleteArchivedSession(id) {
+    if (get().isClosing) return false;
     set((state) => ({
       sessionArchive: state.sessionArchive.filter((item) => item.id !== id),
       revision: state.revision + 1,
@@ -478,6 +500,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
     return true;
   },
   replacePersistentState(replacement) {
+    if (get().isClosing) return;
     const valid = migrateToV5(replacement, "备份恢复");
     set((state) => ({
       ...valid,
@@ -533,6 +556,25 @@ export async function flushStore(): Promise<void> {
   window.clearTimeout(saveTimer);
   const state = useAppStore.getState();
   if (state.hydrated) await persistCurrentSnapshot();
+}
+
+export function beginStoreClose(): void {
+  // Freeze persistent actions before the first await in the native close path.
+  // The in-flight save queue is drained by flushStoreUntilStable below.
+  useAppStore.setState({ isClosing: true });
+  window.clearTimeout(saveTimer);
+}
+
+export function endStoreClose(): void {
+  useAppStore.setState({ isClosing: false });
+}
+
+export async function flushStoreUntilStable(): Promise<void> {
+  let revision: number;
+  do {
+    revision = useAppStore.getState().revision;
+    await flushStore();
+  } while (useAppStore.getState().revision !== revision);
 }
 
 export function snapshotState(): AppState {

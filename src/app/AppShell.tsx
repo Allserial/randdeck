@@ -1,11 +1,12 @@
-import { lazy, Suspense, useCallback, useEffect } from "react";
+import { lazy, Suspense, useCallback, useEffect, useLayoutEffect } from "react";
 import { useTranslation } from "react-i18next";
 import { AnimatePresence, motion } from "motion/react";
 import { BarChart3, Dices, PanelTopOpen, Settings, Volume2, VolumeX } from "lucide-react";
 import clsx from "clsx";
 import type { AppView } from "../domain/types";
 import { cancelCeremony, finishCeremonyToNormal, generateDraw, skipCeremonyReveal, startCountdownCeremony } from "./drawController";
-import { flushStore, useAppStore } from "./store";
+import { endStoreClose, flushStore, useAppStore } from "./store";
+import { prepareMainWindowClose } from "./close";
 import { applyWindowMaterial, listenDisplayReady, listenMainWindowClose, openDisplayWindow, setApplicationWindowTitle } from "../platform/desktop";
 import { publishCurrentDisplay } from "./drawController";
 import { ErrorBoundary } from "../components/ui/ErrorBoundary";
@@ -37,6 +38,7 @@ export default function AppShell() {
   const { t } = useTranslation();
   const translate = t as unknown as (key: string) => string;
   const hydrated = useAppStore((state) => state.hydrated);
+  const isClosing = useAppStore((state) => state.isClosing);
   const settings = useAppStore((state) => state.settings);
   const ui = useAppStore((state) => state.ui);
   const warnings = useAppStore((state) => state.warnings);
@@ -48,6 +50,25 @@ export default function AppShell() {
   const updateSettings = useAppStore((state) => state.updateSettings);
   const setToast = useAppStore((state) => state.setToast);
   const setError = useAppStore((state) => state.setError);
+
+  useLayoutEffect(() => {
+    if (!isClosing) return;
+    // Radix dialogs portal directly under body, outside the workbench shell.
+    // Their document-level dismiss handlers can still see Escape/outside input
+    // while inert. Intercept at window capture before those handlers run.
+    const previousInert = document.body.hasAttribute("inert");
+    const events = ["keydown", "keyup", "pointerdown", "pointerup", "mousedown", "mouseup", "click", "dblclick", "contextmenu", "touchstart", "touchend", "wheel", "focusin", "focusout", "beforeinput", "input", "change", "submit"];
+    const blockInput = (event: Event) => {
+      if (event.cancelable) event.preventDefault();
+      event.stopImmediatePropagation();
+    };
+    events.forEach((type) => window.addEventListener(type, blockInput, { capture: true, passive: false }));
+    document.body.setAttribute("inert", "");
+    return () => {
+      if (!previousInert) document.body.removeAttribute("inert");
+      events.forEach((type) => window.removeEventListener(type, blockInput, true));
+    };
+  }, [isClosing]);
 
   useEffect(() => {
     if (hydrated) void publishCurrentDisplay();
@@ -96,7 +117,8 @@ export default function AppShell() {
   useEffect(() => {
     let cancelled = false;
     let dispose: () => void = () => undefined;
-    listenMainWindowClose(flushStore, (error) => {
+    listenMainWindowClose(prepareMainWindowClose, (error) => {
+      endStoreClose();
       useAppStore.getState().setError((error as Error).message);
     }).then((cleanup) => {
       if (cancelled) cleanup();
@@ -113,7 +135,7 @@ export default function AppShell() {
     const keydown = (event: KeyboardEvent) => {
       const target = event.target as HTMLElement | null;
       const state = useAppStore.getState();
-      if (state.ui.activeView !== "roll" || event.isComposing || event.repeat || event.ctrlKey || event.altKey || event.metaKey) return;
+      if (state.isClosing || state.ui.activeView !== "roll" || event.isComposing || event.repeat || event.ctrlKey || event.altKey || event.metaKey) return;
       const inDialog = target instanceof HTMLElement && Boolean(target.closest("dialog, [role='dialog']"));
 
       const ceremony = state.ceremony;
@@ -192,7 +214,7 @@ export default function AppShell() {
   const Panel = ui.activeView === "insights" ? InsightsView : ui.activeView === "settings" ? SettingsView : null;
 
   return (
-    <div className="app-shell workbench">
+    <div className="app-shell workbench" inert={isClosing} aria-busy={isClosing || undefined}>
       <header className="app-header">
         <div className="app-brand">
           <span className="brand-glyph">

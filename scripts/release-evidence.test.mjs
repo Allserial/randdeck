@@ -11,13 +11,19 @@ const temporaryBase = path.join(repositoryRoot, 'test-results', 'release-evidenc
 const guard = path.join(repositoryRoot, 'scripts', 'release-evidence.ps1');
 const sourceCommit = 'a'.repeat(40);
 const sourceBranch = 'codex/release-evidence-fixture';
-const requiredGates = [
-  'npm-audit', 'i18n-verify', 'privacy-verify', 'icons-verify', 'lint', 'typecheck',
-  'unit-component', 'playwright', 'vite-build', 'cargo-fmt', 'cargo-test',
-  'cargo-check-locked', 'release-evidence-tests',
-];
 const hash = (bytes) => createHash('sha256').update(bytes).digest('hex');
 const quotePowerShell = (value) => `'${value.replaceAll("'", "''")}'`;
+const requiredGates = readContract('Get-RequiredReleaseGates');
+const requiredNativeChecks = readContract('Get-RequiredNativeRuntimeChecks');
+const protectedSessionChecks = ['savedStateMatched', 'reopenedStateMatched', 'stateRestored', 'applicationClosed', 'reopened', 'passed'];
+const executablePath = 'src-tauri/target/release/randdeck.exe';
+
+function readContract(functionName) {
+  const result = runPowerShell(`$ErrorActionPreference = 'Stop'; . ${quotePowerShell(guard)}; @(${functionName}) | ConvertTo-Json -Compress`);
+  assert.ifError(result.error);
+  assert.equal(result.status, 0, result.stderr);
+  return JSON.parse(result.stdout);
+}
 
 function fixture() {
   mkdirSync(temporaryBase, { recursive: true });
@@ -29,13 +35,15 @@ function fixture() {
     return hash(readFileSync(target));
   };
   const native = {
-    passed: true, cleanSource: true, sourceCommit, consoleErrors: [],
-    executablePath: 'bin/RandDeck.exe', executableSha256: write('bin/RandDeck.exe', 'synthetic fixture bytes; never executed'),
+    schema: 'zhishutai.tauri-runtime-smoke.v1', passed: true, cleanSource: true, sourceCommit, sessionId: 'c'.repeat(32),
+    protectedSession: Object.fromEntries(protectedSessionChecks.map((id) => [id, true])),
+    checks: requiredNativeChecks.map((id) => ({ id, status: 'passed' })), consoleErrors: [], ipcErrors: [],
+    executablePath, executableSha256: write(executablePath, 'synthetic fixture bytes; never executed'),
   };
   const verification = {
     schema: 'zhishutai.verification.v1', passed: true, version: '0.7.1', sourceCommit, sourceBranch,
     gates: requiredGates.map((id) => ({ id, status: 'passed', exitCode: 0, log: `logs/${id}.log`, sha256: write(`logs/${id}.log`, `synthetic ${id} result\n`) })),
-    tauriRuntime: { status: 'passed', sourceCommit, report: 'reports/native.json', sha256: '' },
+    tauriRuntime: { status: 'passed', sourceCommit, executableSha256: native.executableSha256, report: 'reports/native.json', sha256: '' },
   };
   const saveNative = () => { verification.tauriRuntime.sha256 = write('reports/native.json', JSON.stringify(native)); };
   saveNative();
@@ -78,12 +86,16 @@ test('shared PowerShell release guard accepts complete evidence and rejects inco
       const gate = verification.gates.find(({ id }) => id === 'cargo-fmt');
       gate.sha256 = write(gate.log, '');
     }, true],
+    ['complete native checks in another order', ({ native, saveNative }) => { native.checks.reverse(); saveNative(); }, true],
     ['metadata with passed:true only', ({ verification }) => { delete verification.gates; delete verification.tauriRuntime; }],
     ['missing gate', ({ verification }) => { verification.gates.pop(); }],
     ['duplicate gate with unchanged gate count', ({ verification }) => { verification.gates[1] = structuredClone(verification.gates[0]); }],
     ['failed gate', ({ verification }) => { verification.gates[0].status = 'failed'; }],
     ['nonzero gate exit code', ({ verification }) => { verification.gates[0].exitCode = 1; }],
     ['missing gate exit code', ({ verification }) => { delete verification.gates[0].exitCode; }],
+    ['string gate exit code', ({ verification }) => { verification.gates[0].exitCode = '0'; }],
+    ['Boolean gate exit code', ({ verification }) => { verification.gates[0].exitCode = false; }],
+    ['array gate status', ({ verification }) => { verification.gates[0].status = ['passed']; }],
     ['stale source commit', ({ verification }) => { verification.sourceCommit = 'b'.repeat(40); }],
     ['stale source branch', ({ verification }) => { verification.sourceBranch = 'another-branch'; }],
     ['tampered gate log', ({ write, verification }) => { write(verification.gates[0].log, 'changed after validation'); }],
@@ -94,9 +106,59 @@ test('shared PowerShell release guard accepts complete evidence and rejects inco
     ['native report from dirty source', ({ native, saveNative }) => { native.cleanSource = false; saveNative(); }],
     ['native passed is a string rather than a Boolean', ({ native, saveNative }) => { native.passed = 'true'; saveNative(); }],
     ['native cleanSource is a string rather than a Boolean', ({ native, saveNative }) => { native.cleanSource = 'true'; saveNative(); }],
+    ['missing native schema', ({ native, saveNative }) => { delete native.schema; saveNative(); }],
+    ['unknown native schema', ({ native, saveNative }) => { native.schema = 'zhishutai.tauri-runtime-smoke.v999'; saveNative(); }],
+    ['native schema has an array type', ({ native, saveNative }) => { native.schema = [native.schema]; saveNative(); }],
+    ['missing protected native session ID', ({ native, saveNative }) => { delete native.sessionId; saveNative(); }],
+    ['malformed protected native session ID', ({ native, saveNative }) => { native.sessionId = 'not-a-session'; saveNative(); }],
+    ['uppercase protected native session ID', ({ native, saveNative }) => { native.sessionId = 'C'.repeat(32); saveNative(); }],
+    ['non-string protected native session ID', ({ native, saveNative }) => { native.sessionId = 7; saveNative(); }],
+    ['missing protected native session', ({ native, saveNative }) => { delete native.protectedSession; saveNative(); }],
+    ['null protected native session', ({ native, saveNative }) => { native.protectedSession = null; saveNative(); }],
+    ['string protected native session', ({ native, saveNative }) => { native.protectedSession = 'passed'; saveNative(); }],
+    ['array protected native session', ({ native, saveNative }) => { native.protectedSession = []; saveNative(); }],
+    ['empty protected native session', ({ native, saveNative }) => { native.protectedSession = {}; saveNative(); }],
+    ...protectedSessionChecks.flatMap((id) => [
+      [`missing protected native ${id}`, ({ native, saveNative }) => { delete native.protectedSession[id]; saveNative(); }],
+      [`string protected native ${id}`, ({ native, saveNative }) => { native.protectedSession[id] = 'true'; saveNative(); }],
+      [`failed protected native ${id} despite runtime passed:true`, ({ native, saveNative }) => { native.protectedSession[id] = false; saveNative(); }],
+    ]),
+    ['missing native checks', ({ native, saveNative }) => { delete native.checks; saveNative(); }],
+    ['null native checks', ({ native, saveNative }) => { native.checks = null; saveNative(); }],
+    ['empty native checks', ({ native, saveNative }) => { native.checks = []; saveNative(); }],
+    ['scalar native checks', ({ native, saveNative }) => { native.checks = 'passed'; saveNative(); }],
+    ['missing native check', ({ native, saveNative }) => { native.checks.pop(); saveNative(); }],
+    ['duplicate native check with unchanged count', ({ native, saveNative }) => { native.checks[1] = structuredClone(native.checks[0]); saveNative(); }],
+    ['unknown native check with unchanged count', ({ native, saveNative }) => { native.checks[0].id = 'unknown-native-check'; saveNative(); }],
+    ['extra unknown native check', ({ native, saveNative }) => { native.checks.push({ id: 'unknown-native-check', status: 'passed' }); saveNative(); }],
+    ['null native check row', ({ native, saveNative }) => { native.checks[0] = null; saveNative(); }],
+    ['failed native check despite passed:true', ({ native, saveNative }) => { native.checks[0].status = 'failed'; saveNative(); }],
+    ['running native check despite passed:true', ({ native, saveNative }) => { native.checks[0].status = 'running'; saveNative(); }],
+    ['missing native check status', ({ native, saveNative }) => { delete native.checks[0].status; saveNative(); }],
+    ['array native check status', ({ native, saveNative }) => { native.checks[0].status = ['passed']; saveNative(); }],
+    ['native check carries an error despite passed status', ({ native, saveNative }) => { native.checks[0].error = 'recorded fixture failure'; saveNative(); }],
     ['native console errors', ({ native, saveNative }) => { native.consoleErrors = ['uncaught fixture failure']; saveNative(); }],
+    ['missing native console errors', ({ native, saveNative }) => { delete native.consoleErrors; saveNative(); }],
+    ['null native console errors', ({ native, saveNative }) => { native.consoleErrors = null; saveNative(); }],
+    ['string native console errors', ({ native, saveNative }) => { native.consoleErrors = ''; saveNative(); }],
+    ['object native console errors', ({ native, saveNative }) => { native.consoleErrors = {}; saveNative(); }],
+    ['native IPC errors', ({ native, saveNative }) => { native.ipcErrors = [{ command: 'plugin:store|save', error: 'fixture denied' }]; saveNative(); }],
+    ['missing native IPC errors', ({ native, saveNative }) => { delete native.ipcErrors; saveNative(); }],
+    ['null native IPC errors', ({ native, saveNative }) => { native.ipcErrors = null; saveNative(); }],
+    ['string native IPC errors', ({ native, saveNative }) => { native.ipcErrors = ''; saveNative(); }],
+    ['object native IPC errors', ({ native, saveNative }) => { native.ipcErrors = {}; saveNative(); }],
+    ['Boolean native IPC errors', ({ native, saveNative }) => { native.ipcErrors = false; saveNative(); }],
+    ['empty native report', ({ native, saveNative }) => { Object.keys(native).forEach((key) => delete native[key]); saveNative(); }],
     ['native report hash mismatch', ({ verification }) => { verification.tauriRuntime.sha256 = '0'.repeat(64); }],
-    ['native executable hash mismatch', ({ write }) => { write('bin/RandDeck.exe', 'tampered executable fixture'); }],
+    ['native executable hash mismatch', ({ write }) => { write(executablePath, 'tampered executable fixture'); }],
+    ['missing native executable', ({ root }) => { rmSync(path.join(root, executablePath)); }],
+    ['native executable metadata hash mismatch', ({ verification }) => { verification.tauriRuntime.executableSha256 = '0'.repeat(64); }],
+    ['evidence for another existing executable', ({ native, verification, write, saveNative }) => {
+      native.executablePath = 'bin/other.exe';
+      native.executableSha256 = write(native.executablePath, 'synthetic other executable');
+      verification.tauriRuntime.executableSha256 = native.executableSha256;
+      saveNative();
+    }],
     ['gate evidence escaping the repository root', ({ verification }) => { verification.gates[0].log = '../outside.log'; }],
   ];
   for (const [name, mutate, accepted = false] of cases) {
@@ -119,6 +181,20 @@ test('shared PowerShell release guard accepts complete evidence and rejects inco
       }
     });
   }
+});
+
+test('native release contract exactly matches the checks executed by the desktop smoke runner', () => {
+  const smokeSource = readFileSync(path.join(repositoryRoot, 'scripts', 'tauri-runtime-smoke.mjs'), 'utf8');
+  const actual = [...smokeSource.matchAll(/await check\("([a-z0-9-]+)"/g)].map((match) => match[1]);
+  assert.equal(new Set(actual).size, actual.length, 'native smoke check IDs must be unique');
+  assert.deepEqual([...requiredNativeChecks].sort(), [...actual].sort());
+});
+
+test('release gate contract exactly matches the commands executed by verify-release', () => {
+  const runner = readFileSync(path.join(repositoryRoot, 'scripts', 'verify-release.ps1'), 'utf8');
+  const actual = [...runner.matchAll(/@\{ id = "([a-z0-9-]+)"/g)].map((match) => match[1]);
+  assert.equal(new Set(actual).size, actual.length, 'release gate IDs must be unique');
+  assert.deepEqual([...requiredGates].sort(), [...actual].sort());
 });
 
 test('upload checksum generation uses finalized local bytes and rejects stale artifact declarations', () => {

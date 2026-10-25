@@ -37,6 +37,10 @@ jobs:
         run: npm run typecheck
       - name: Unit and component tests
         run: npm run test
+      - name: Release evidence contract tests
+        run: node scripts/release-evidence.test.mjs
+      - name: Dependency license report tests
+        run: node --test scripts/dependency-licenses.test.mjs
       - name: Build frontend
         run: npm run build
       - name: Check Rust formatting

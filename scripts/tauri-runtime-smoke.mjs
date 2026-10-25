@@ -11,9 +11,12 @@ import { LogicalSize, PhysicalSize, Size } from "@tauri-apps/api/dpi";
 // All UI/IPC checks below run in its real WebView2; no HTTP server is started here.
 const root = fileURLToPath(new URL("../", import.meta.url));
 const endpoint = process.env.TAURI_CDP_URL || "http://127.0.0.1:9222";
-const reportDir = resolve(root, process.env.TAURI_RUNTIME_REPORT_DIR || "reports/tauri-runtime/0.7.1");
+const reportDir = resolve(root, process.env.TAURI_RUNTIME_REPORT_DIR || "reports/tauri-runtime/0.7.2");
 const executable = resolve(root, process.env.TAURI_EXECUTABLE || "src-tauri/target/release/randdeck.exe");
 const targetProcessId = Number(process.env.TAURI_PROCESS_ID);
+const runtimeSessionId = process.env.TAURI_RUNTIME_SESSION_ID || null;
+const stateFile = process.env.TAURI_STATE_FILE ? resolve(process.env.TAURI_STATE_FILE) : null;
+const closeExpectedFile = resolve(reportDir, "close-expected-state.json");
 const repoPath = (path) => relative(root, path).replaceAll("\\", "/");
 const git = (...args) => execFileSync("git", ["-C", root, ...args], { encoding: "utf8", windowsHide: true }).trim();
 const cleanSource = () => git("status", "--porcelain", "--untracked-files=normal", "--", ".", ":(exclude)reports") === "";
@@ -24,13 +27,14 @@ await mkdir(reportDir, { recursive: true });
 const report = {
   schema: "zhishutai.tauri-runtime-smoke.v1", generatedAt: new Date().toISOString(), passed: false,
   sourceCommit: git("rev-parse", "HEAD"), cleanSource: cleanSource(),
-  executablePath: repoPath(executable), executableSha256: null, processId: targetProcessId, endpoint,
+  executablePath: repoPath(executable), executableSha256: null, processId: targetProcessId, sessionId: runtimeSessionId, endpoint,
   checks: [], screenshots: [], consoleErrors: [], ipcCalls: [], ipcErrors: [],
   externalValidation: ["Primary EXE exit and restart: caller guard", "Physical external-monitor placement: user hardware acceptance"],
 };
 let browser;
 let main;
 let display;
+let slowClose;
 const watched = new WeakSet();
 
 async function until(predicate, message, timeout = 10_000) {
@@ -158,6 +162,95 @@ async function screenshot(page, name) {
   const path = resolve(reportDir, `${name}.png`);
   await page.screenshot({ path });
   report.screenshots.push(repoPath(path));
+}
+
+async function exposeRuntimeStore(page) {
+  const asset = (await readdir(resolve(root, "dist/assets"))).find((name) => /^store-.*\.js$/.test(name));
+  assert(asset, "Production store asset was not found for the runtime fixture");
+  await page.evaluate(async (url) => {
+    const module = await import(url);
+    const store = Object.values(module).find((value) => typeof value === "function" && typeof value.getState === "function" && typeof value.setState === "function");
+    if (!store) throw new Error("Production Zustand store export was not found");
+    window.__randdeckRuntimeStore = store;
+  }, new URL(`assets/${asset}`, page.url()).href);
+}
+
+// This is the production store's persisted shape, rather than its transient UI,
+// pending ceremony or test instrumentation. This reader never writes to it.
+async function persistentRuntimeSnapshot(page) {
+  return page.evaluate(() => {
+    const state = window.__randdeckRuntimeStore.getState();
+    return Object.fromEntries(["version", "settings", "pools", "history", "stats", "presets", "pinnedPresetIds", "drawState", "sessionArchive", "ui", "migrationNotes"]
+      .map((key) => [key, structuredClone(state[key])]).concat([["activeSession", null]]));
+  });
+}
+
+async function verifySavedOrReopenedState(mode) {
+  const verification = { schema: "zhishutai.close-persistence-verification.v1", mode, passed: false,
+    generatedAt: new Date().toISOString(), sourceCommit: git("rev-parse", "HEAD"),
+    executableSha256: createHash("sha256").update(await readFile(executable)).digest("hex"), sessionId: runtimeSessionId };
+  let reopenedBrowser;
+  try {
+    assert(stateFile, "The caller must identify its protected state-v5.json");
+    const expected = JSON.parse(await readFile(closeExpectedFile, "utf8"));
+    assert.equal(expected.sourceCommit, verification.sourceCommit, "Close expectation belongs to a different source commit");
+    assert.equal(expected.executableSha256, verification.executableSha256, "Close expectation belongs to a different EXE");
+    assert.equal(expected.sessionId, runtimeSessionId, "Close expectation belongs to a different protected session");
+    if (mode === "saved") {
+      const disk = JSON.parse(await readFile(stateFile, "utf8"));
+      assert.deepEqual(disk.current, expected.snapshot, "Real native state-v5.json lost or changed the accepted pre-close state");
+      verification.actualStateSha256 = createHash("sha256").update(JSON.stringify(disk.current)).digest("hex");
+      verification.historyCount = disk.current.history.length;
+      verification.exactPersistentSnapshotMatched = true;
+    } else {
+      reopenedBrowser = await chromium.connectOverCDP(endpoint);
+      const page = reopenedBrowser.contexts()[0]?.pages().find((candidate) => !isDisplay(candidate) && !candidate.url().startsWith("devtools:"));
+      assert(page, "Reopened real main WebView was not found");
+      await page.locator(".app-brand h1").waitFor();
+      await exposeRuntimeStore(page);
+      await until(() => page.evaluate(() => window.__randdeckRuntimeStore.getState().hydrated), "Reopened store did not hydrate");
+      // initializeStore intentionally starts on the range draw page and clears
+      // the current-result pointer while retaining history, pools and statistics.
+      const normalized = structuredClone(expected.snapshot);
+      normalized.settings.mode = "range";
+      normalized.settings.count = normalized.ui.countByMode.range;
+      normalized.drawState.lastTransactionId = null;
+      normalized.ui.activeView = "roll";
+      normalized.ui.insightsTab = "overview";
+      if (await page.evaluate(() => matchMedia("(max-width: 1039px)").matches)) normalized.ui.inspectorOpen = false;
+      assert.deepEqual(await persistentRuntimeSnapshot(page), normalized, "Reopened production store did not restore the saved state");
+      assert.equal(await page.evaluate(() => window.__randdeckRuntimeStore.getState().isClosing), false, "Reopened store retained a stale close lock");
+      assert.equal(await page.locator(".app-shell").evaluate((element) => element.inert), false, "Reopened UI remained inert");
+      assert.equal(await page.evaluate(() => document.body.inert), false, "Reopened body and its Portal UI remained inert");
+      verification.exactHydratedSnapshotMatched = true;
+      verification.historyCount = normalized.history.length;
+      verification.stateClosing = false;
+      const reopenedQuantity = page.locator(".count-control input");
+      if (!await reopenedQuantity.isVisible()) await page.locator(".inspector-toggle:visible").click();
+      const reopenedBounds = await reopenedQuantity.boundingBox();
+      assert(reopenedBounds, "The reopened quantity field is unavailable for actual pointer and keyboard verification");
+      const initialQuantity = await reopenedQuantity.inputValue();
+      await page.mouse.click(reopenedBounds.x + reopenedBounds.width / 2, reopenedBounds.y + reopenedBounds.height / 2);
+      assert.equal(await reopenedQuantity.evaluate((element) => document.activeElement === element), true, "Reopened pointer input remained blocked");
+      await page.keyboard.press("Control+A");
+      await page.keyboard.type(initialQuantity === "7" ? "8" : "7");
+      assert.equal(await reopenedQuantity.inputValue(), initialQuantity === "7" ? "8" : "7", "Reopened keyboard editing remained blocked");
+      await page.keyboard.press("Escape");
+      assert.equal(await reopenedQuantity.inputValue(), initialQuantity, "Reopened Escape did not restore the local quantity draft");
+      assert.equal(await page.evaluate(() => window.__randdeckRuntimeStore.getState().settings.count), normalized.settings.count, "Reopened input verification committed its temporary draft");
+      verification.reopenedPointerAndKeyboardResponsive = true;
+      await page.screenshot({ path: resolve(reportDir, "reopened-saved-state.png") });
+    }
+    verification.passed = true;
+  } catch (error) {
+    verification.error = error?.stack || String(error);
+    process.exitCode = 1;
+  } finally {
+    if (reopenedBrowser?.isConnected()) await reopenedBrowser.close();
+    verification.finishedAt = new Date().toISOString();
+    await writeFile(resolve(reportDir, mode === "saved" ? "closed-saved-state.json" : "reopened-saved-state.json"), `${JSON.stringify(verification, null, 2)}\n`, "utf8");
+    process.stdout.write(`${JSON.stringify(verification, null, 2)}\n`);
+  }
 }
 
 async function native(command, args = {}) {
@@ -314,9 +407,14 @@ if (![RuntimeWindowClose]::PostMessage($runtimeHandle, 0x0010, [IntPtr]::Zero, [
   });
 }
 
+const verificationMode = process.argv.includes("--verify-saved-state") ? "saved" : process.argv.includes("--verify-reopen") ? "reopen" : null;
+if (verificationMode) {
+  await verifySavedOrReopenedState(verificationMode);
+} else {
 try {
   assert(report.cleanSource, "Source tree must be clean before release EXE verification");
   assert(Number.isSafeInteger(targetProcessId) && targetProcessId > 0, "TAURI_PROCESS_ID must identify the caller-owned primary EXE");
+  assert.match(runtimeSessionId || "", /^[0-9a-f]{32}$/, "TAURI_RUNTIME_SESSION_ID must identify the caller-owned protected session");
   report.executableSha256 = createHash("sha256").update(await readFile(executable)).digest("hex");
   browser = await chromium.connectOverCDP(endpoint);
   const context = browser.contexts()[0];
@@ -436,15 +534,7 @@ try {
   });
 
   await check("display-particle-settings-and-canvas-clear", async () => {
-    const asset = (await readdir(resolve(root, "dist/assets"))).find((name) => /^store-.*\.js$/.test(name));
-    assert(asset, "Production store asset was not found for the bounded particle fixture");
-    const assetUrl = new URL(`assets/${asset}`, main.url()).href;
-    await main.evaluate(async (url) => {
-      const module = await import(url);
-      const store = Object.values(module).find((value) => typeof value === "function" && typeof value.getState === "function" && typeof value.setState === "function");
-      if (!store) throw new Error("Production Zustand store export was not found");
-      window.__randdeckRuntimeStore = store;
-    }, assetUrl);
+    await exposeRuntimeStore(main);
     const systemReducedMotion = await display.evaluate(() => matchMedia("(prefers-reduced-motion: reduce)").matches);
     if (systemReducedMotion) await display.emulateMedia({ reducedMotion: "no-preference" });
     const cases = [];
@@ -560,9 +650,151 @@ try {
     return report.singleInstance;
   });
 
+  await check("native-close-during-slow-save", async () => {
+    assert(stateFile, "The caller must identify its protected state-v5.json");
+    await main.getByLabel("主导航").getByRole("button", { name: "抽取台", exact: true }).click();
+    await main.getByLabel("抽取模式").getByRole("button", { name: "范围池", exact: true }).click();
+    const quantity = main.getByRole("textbox", { name: "生成数量", exact: true });
+    if (!await quantity.isVisible()) await main.locator(".inspector-toggle:visible").click();
+    await quantity.fill("4");
+    await quantity.press("Enter");
+    await until(async () => {
+      try {
+        const disk = JSON.parse(await readFile(stateFile, "utf8"));
+        return disk.current.settings.mode === "range" && disk.current.settings.count === 4;
+      } catch { return false; }
+    }, "The real native store did not save the slow-close scenario configuration");
+    await main.evaluate(() => {
+      const originalFetch = window.fetch;
+      let release;
+      const barrier = new Promise((done) => { release = done; });
+      const gate = window.__randdeckCloseSaveGate = { armed: true, blocked: false, released: false, forwarded: false,
+        release() { gate.released = true; release(); } };
+      window.fetch = async function (input, options) {
+        const address = typeof input === "string" ? input : input instanceof URL ? input.href : input?.url;
+        let command;
+        try {
+          const url = new URL(address);
+          if (url.protocol === "ipc:" || ((url.protocol === "http:" || url.protocol === "https:") && url.hostname === "ipc.localhost")) command = decodeURIComponent(url.pathname.replace(/^\//, ""));
+        } catch { /* Non-IPC requests pass through unchanged. */ }
+        if (gate.armed && command === "plugin:store|save") {
+          gate.armed = false;
+          gate.blocked = true;
+          await barrier;
+          gate.forwarded = true;
+        }
+        // Preserve the exact native request and response. The fixture delays one
+        // real store save; it never fakes a successful save or edits app state.
+        return Reflect.apply(originalFetch, this, [input, options]);
+      };
+    });
+    await main.locator(".generate-main-btn:visible").click();
+    await until(async () => await main.locator(".result-tile:not(.is-rolling)").count() === 4, "The slow-close scenario did not commit a real four-result draw");
+    await until(() => main.evaluate(() => window.__randdeckCloseSaveGate.blocked), "The real native store save was not delayed");
+    const expectedSnapshot = await persistentRuntimeSnapshot(main);
+    const generatedTransactionId = await main.evaluate(() => window.__randdeckRuntimeStore.getState().drawState.lastTransactionId);
+    assert(expectedSnapshot.history.some((entry) => entry.transactionId === generatedTransactionId), "The accepted draw is missing from the expected close snapshot");
+    // Radix renders this dialog directly below body, outside the main shell.
+    // Keep a real unsaved component draft open across WM_CLOSE so a store-only
+    // guard cannot conceal an interactive Portal that silently discards edits.
+    await main.locator(".stage-note-btn").click();
+    const noteDialog = main.locator(".dialog-content");
+    await noteDialog.waitFor({ state: "visible" });
+    const noteInput = noteDialog.locator("input.note-input");
+    const noteDraft = `RUNTIME-CLOSE-UNSAVED-DRAFT-${generatedTransactionId}`;
+    await noteInput.fill(noteDraft);
+    assert.equal(await noteDialog.evaluate((element) => element.closest(".app-shell") === null), true, "The close fixture must exercise a real body-level Portal");
+    const noteSave = noteDialog.locator(".dialog-footer button").filter({ hasText: /^保存$/ });
+    const noteInputBounds = await noteInput.boundingBox();
+    const noteSaveBounds = await noteSave.boundingBox();
+    const noteDialogBounds = await noteDialog.boundingBox();
+    assert(noteInputBounds && noteSaveBounds && noteDialogBounds, "The Portal note draft and Save control must be visible before native close");
+    const viewport = await main.evaluate(() => ({ width: innerWidth, height: innerHeight }));
+    const outsidePoint = [{ x: 4, y: 4 }, { x: viewport.width - 4, y: 4 }, { x: 4, y: viewport.height - 4 }]
+      .find((point) => point.x < noteDialogBounds.x || point.x > noteDialogBounds.x + noteDialogBounds.width
+        || point.y < noteDialogBounds.y || point.y > noteDialogBounds.y + noteDialogBounds.height);
+    assert(outsidePoint, "A real pointer target outside the Portal dialog was not found");
+    const title = await native("plugin:window|title", { label: "main" });
+    const nativeRequest = await closeMainViaWmClose(title);
+    assert.equal(nativeRequest.posted, true);
+    await until(() => main.evaluate(() => window.__randdeckRuntimeStore.getState().isClosing
+      && window.__randdeckRuntimeStore.getState().ceremony.phase === "idle"
+      && document.querySelector(".app-shell")?.inert
+      && document.body.inert), "WM_CLOSE did not freeze the main shell and body-level Portal UI while a native save was pending");
+    assert.equal(main.isClosed(), false, "Main was destroyed before its pending native save completed");
+    assert.equal(display.isClosed(), false, "Display was destroyed before the main close was ready");
+    assert.deepEqual(await persistentRuntimeSnapshot(main), expectedSnapshot, "Beginning close changed an accepted persistent state");
+    const revisionBeforeAttempts = await main.evaluate(() => window.__randdeckRuntimeStore.getState().revision);
+    const portalInertAncestor = await noteSave.evaluate((element) => element.closest("[inert]")?.tagName);
+    assert.equal(portalInertAncestor, "BODY", "The Portal Save control is outside the actual inert close boundary");
+    // Raw mouse/keyboard delivery intentionally bypasses Playwright's locator
+    // actionability wait without bypassing the browser's real inert behavior.
+    await main.mouse.click(noteInputBounds.x + noteInputBounds.width / 2, noteInputBounds.y + noteInputBounds.height / 2);
+    await main.keyboard.press("Control+A");
+    await main.keyboard.type("REJECTED-LATE-DRAFT-EDIT");
+    await main.keyboard.press("Enter");
+    await main.mouse.click(noteSaveBounds.x + noteSaveBounds.width / 2, noteSaveBounds.y + noteSaveBounds.height / 2);
+    await main.keyboard.press("Enter");
+    await main.keyboard.press("Escape");
+    await main.keyboard.press("Space");
+    await main.mouse.click(outsidePoint.x, outsidePoint.y);
+    await main.keyboard.press("Escape");
+    assert.equal(await noteDialog.count(), 1, "Frozen Portal Save, Enter, Escape, Space or outside pointer dismissed the unsaved note dialog");
+    assert.equal(await noteInput.inputValue(), noteDraft, "Frozen Portal keyboard or outside pointer input lost the existing note draft");
+    // Exercise real keyboard and pointer delivery against the now inert UI.
+    // Use a CSS locator here: ARIA role locators omit genuinely inert controls.
+    const frozenQuantity = main.locator(".count-control input");
+    const bounds = await frozenQuantity.boundingBox();
+    assert(bounds, "The visible quantity field is missing from the frozen UI");
+    await main.mouse.click(bounds.x + bounds.width / 2, bounds.y + bounds.height / 2);
+    await main.keyboard.press("Control+A");
+    await main.keyboard.type("49");
+    assert.equal(await frozenQuantity.inputValue(), "4", "Frozen UI accepted a late quantity edit");
+    assert.equal(await noteDialog.count(), 1, "Late shell keyboard delivery dismissed the inert Portal dialog");
+    assert.equal(await noteInput.inputValue(), noteDraft, "Late shell keyboard delivery changed the inert Portal draft");
+    const attemptedActions = await main.evaluate(() => {
+      const store = window.__randdeckRuntimeStore.getState();
+      const entry = store.history.find((item) => item.transactionId === store.drawState.lastTransactionId);
+      if (!entry) throw new Error("The real draw is missing for the late-commit guard test");
+      const transaction = {
+        id: `runtime-rejected-late-${Date.now()}`, createdAt: new Date().toISOString(), mode: entry.mode,
+        configSnapshot: structuredClone(entry.config), poolsSnapshot: structuredClone(store.pools),
+        poolFingerprint: entry.poolFingerprint, results: structuredClone(entry.results),
+        operation: entry.operation || { kind: "draw" }, statsDelta: structuredClone(entry.statsDelta),
+        usedAdded: structuredClone(entry.usedAdded || []), candidateCount: 100,
+        candidateSpec: { mode: entry.mode, exclusions: "", selectedTags: [], tagCombine: "any" },
+        algorithmVersion: "webcrypto-rejection-v1",
+      };
+      store.updateSettings({ count: 49 });
+      store.updatePools({ customEntries: [{ id: "runtime-rejected-late-pool", value: 999, tags: [] }] });
+      store.commitTransaction(transaction);
+      store.updateHistoryNote(entry.id, "runtime-rejected-late-note");
+      store.setView("settings");
+      store.clearHistory();
+      return ["updateSettings", "updatePools", "commitTransaction", "updateHistoryNote", "setView", "clearHistory"];
+    });
+    assert.deepEqual(await persistentRuntimeSnapshot(main), expectedSnapshot, "A persistent action was accepted after native close began");
+    assert.equal(await main.evaluate(() => window.__randdeckRuntimeStore.getState().revision), revisionBeforeAttempts, "Rejected close-period actions changed the store revision");
+    assert.equal(await main.evaluate(() => window.__randdeckCloseSaveGate.released), false, "Slow save was released before the guard assertions completed");
+    await writeFile(closeExpectedFile, `${JSON.stringify({ sourceCommit: report.sourceCommit, sessionId: runtimeSessionId,
+      executableSha256: report.executableSha256, generatedTransactionId, snapshot: expectedSnapshot }, null, 2)}\n`, "utf8");
+    await screenshot(main, "native-close-pending-save-frozen");
+    slowClose = { nativeRequest, pendingSaveBlocked: true, mainRetainedUntilSaved: true,
+      displayRetainedUntilSaved: true, inert: true, acceptedTransactionId: generatedTransactionId,
+      bodyInert: true, portalNote: { outsideAppShell: true, inertAncestor: portalInertAncestor,
+        saveAndEnterBlocked: true, escapeSpaceAndOutsidePointerBlocked: true, outsidePointerCoordinates: outsidePoint,
+        draftRetained: true, dialogRetained: true },
+      historyCount: expectedSnapshot.history.length, rejectedActions: attemptedActions,
+      rejectedKeyboardEdit: true, revisionBeforeAttempts, revisionAfterAttempts: revisionBeforeAttempts,
+      expectedSnapshot: repoPath(closeExpectedFile),
+      fixture: "One real plugin:store|save delayed before forwarding unchanged request/response; genuine WM_CLOSE, real store actions and keyboard/pointer attempts" };
+    report.slowClose = slowClose;
+    return slowClose;
+  });
+
   await check("native-main-close-closes-display", async () => {
     assert.equal(display.isClosed(), false, "Display must remain open when closing main");
-    const title = await native("plugin:window|title", { label: "main" });
+    assert(slowClose?.pendingSaveBlocked, "The native close must exercise the pending save scenario");
     await collectIpc();
     const disconnected = new Promise((done, reject) => {
       if (!browser.isConnected()) { done(); return; }
@@ -571,10 +803,12 @@ try {
     });
     const closed = Promise.all([main.waitForEvent("close", { timeout: 15_000 }), display.waitForEvent("close", { timeout: 15_000 }), disconnected]);
     void closed.catch(() => undefined);
-    report.nativeClose = await closeMainViaWmClose(title);
+    report.nativeClose = slowClose.nativeRequest;
     assert.equal(report.nativeClose.posted, true);
+    await main.evaluate(() => window.__randdeckCloseSaveGate.release());
     await closed;
-    report.shutdown = { mainClosed: main.isClosed(), displayClosed: display.isClosed(), cdpDisconnected: !browser.isConnected(), exeProcessExitAndRestart: "caller guard" };
+    report.shutdown = { mainClosed: main.isClosed(), displayClosed: display.isClosed(), cdpDisconnected: !browser.isConnected(),
+      pendingSaveReleasedToNative: true, savedSnapshotAndReopen: "caller guard verifies full persisted and hydrated snapshots", exeProcessExitAndRestart: "caller guard" };
     assert(report.shutdown.mainClosed && report.shutdown.displayClosed && report.shutdown.cdpDisconnected);
     return report.shutdown;
   });
@@ -594,4 +828,5 @@ try {
   await writeFile(resolve(reportDir, "runtime-smoke.json"), `${JSON.stringify(report, null, 2)}\n`, "utf8");
   process.stdout.write(`${JSON.stringify(report, null, 2)}\n`);
   if (browser?.isConnected()) await browser.close();
+}
 }

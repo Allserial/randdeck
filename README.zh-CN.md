@@ -23,8 +23,8 @@ English documentation: [README.md](README.md)。
 前往 [GitHub Releases](https://github.com/Allserial/randdeck/releases) 下载最新版：
 
 - `RandDeck.exe`：单文件便携版，双击即用（电脑需自带 Microsoft Edge WebView2 Runtime，Windows 11 默认已内置）。
-- `RandDeck-v0.7.1-portable.zip`：完整便携包，解压后使用，内含中英文说明、项目及依赖许可证清单、文件清单和 SHA256 校验值。
-- `RandDeck-v0.7.1-offline-setup.exe`：离线安装包，自带 WebView2 离线运行库，支持从旧版直接覆盖升级并保留本机数据。
+- `RandDeck-v0.7.2-portable.zip`：完整便携包，解压后使用，内含中英文说明、项目及依赖许可证清单、文件清单和 SHA256 校验值。
+- `RandDeck-v0.7.2-offline-setup.exe`：离线安装包，自带 WebView2 离线运行库，支持从旧版直接覆盖升级并保留本机数据。
 
 当前版本未购买商业代码签名证书，Windows SmartScreen 可能会提示“未知发布者”。运行前请核对发布页提供的 SHA256 校验值。
 
@@ -75,4 +75,4 @@ npm run tauri:build:portable
 
 ## 许可证
 
-采用 [MIT License](LICENSE) 开源。第三方依赖各自遵循原许可证，发布包内附有完整的依赖许可证清单。
+采用 [MIT License](LICENSE) 开源。第三方依赖各自遵循原许可证。发布包内附有 `dependencies-licenses.json`：`npmResolved` 枚举 `package-lock.json` 中全部已解析包的位置，覆盖传递依赖、开发依赖、可选依赖及平台专用依赖；`npmDirect` 保留直接依赖摘要以兼容原格式。每项 npm 记录包含锁定的名称、版本、许可证、依赖标记、平台限制和安装状态；`rustResolved` 枚举锁定 Cargo 元数据返回的包。该清单描述源码及构建依赖，不表示全部条目均嵌入可执行文件。npm 许可证元数据缺失或与已安装包的元数据冲突时，停止生成发布包。

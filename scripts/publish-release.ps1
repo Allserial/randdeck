@@ -1,5 +1,5 @@
 ﻿param(
-  [string]$Version = "0.7.1",
+  [string]$Version = "0.7.2",
   [switch]$Candidate,
   [switch]$Force
 )
@@ -47,6 +47,13 @@ if ([string]$package.version -ne $Version -or [string]$tauriConfig.version -ne $
 }
 $statusBefore = ((& git -C $root status --porcelain --untracked-files=normal -- . ":(exclude)releases/$Version" 2>$null) -join "`n").Trim()
 if ($statusBefore) { throw "源码工作树不是干净状态，停止发布：`n$statusBefore" }
+
+# Validate the complete locked npm inventory before replacing any release files.
+$npmInventoryJson = & node (Join-Path $PSScriptRoot "dependency-licenses.mjs") --root $root
+if ($LASTEXITCODE -ne 0) { throw "npm 依赖许可证清单生成失败，停止发布。" }
+$npmInventory = ($npmInventoryJson -join "`n") | ConvertFrom-Json
+$npmDependencies = @($npmInventory.npmDirect)
+$npmResolvedDependencies = @($npmInventory.npmResolved)
 
 if (Test-Path -LiteralPath $releaseRoot) {
   if (!$Force) { throw "发布目录已存在：$releaseRoot。需要覆盖时请显式使用 -Force。" }
@@ -102,15 +109,6 @@ if (Test-Path -LiteralPath $previousInstaller) {
   $installerDeltaMiB = [math]::Round(($installer.bytes - (Get-Item -LiteralPath $previousInstaller).Length) / 1MB, 2)
 }
 
-$directNames = @($package.dependencies.PSObject.Properties.Name) + @($package.devDependencies.PSObject.Properties.Name) | Sort-Object -Unique
-$npmDependencies = foreach ($name in $directNames) {
-  $packagePath = Join-Path $root "node_modules\$name\package.json"
-  if (Test-Path -LiteralPath $packagePath) {
-    $metadata = Get-Content -Raw -LiteralPath $packagePath | ConvertFrom-Json
-    [pscustomobject]@{ name = $metadata.name; version = $metadata.version; license = $metadata.license; development = [bool]($package.devDependencies.PSObject.Properties.Name -contains $name) }
-  }
-}
-
 Push-Location (Join-Path $root "src-tauri")
 $cargoMetadataPath = Join-Path $env:TEMP ("zhishutai-cargo-metadata-" + [guid]::NewGuid().ToString("N") + ".json")
 $cargoMetadataErr = "$cargoMetadataPath.err"
@@ -129,7 +127,10 @@ $dependencyReport = [pscustomobject]@{
   schema = "zhishutai.dependencies.v1"
   generatedAt = (Get-Date).ToUniversalTime().ToString("o")
   sourceCommit = $sourceCommit
+  npmScope = $npmInventory.npmScope
+  npmLockfile = $npmInventory.npmLockfile
   npmDirect = $npmDependencies
+  npmResolved = $npmResolvedDependencies
   rustResolved = $rustDependencies
 }
 $dependencyPath = Join-Path $releaseRoot "dependencies-licenses.json"
@@ -173,7 +174,7 @@ $manifest = [pscustomobject]@{
     tauri = Get-ToolVersion $tauriCommand @("--version")
   }
   verification = $verificationArtifact
-  dependencies = [pscustomobject]@{ npmDirectCount = @($npmDependencies).Count; rustResolvedCount = @($rustDependencies).Count; report = $dependencyArtifact }
+  dependencies = [pscustomobject]@{ npmDirectCount = @($npmDependencies).Count; npmResolvedCount = @($npmResolvedDependencies).Count; npmScope = $npmInventory.npmScope.inventory; rustResolvedCount = @($rustDependencies).Count; report = $dependencyArtifact }
   artifacts = @($portable, $installer)
 }
 
