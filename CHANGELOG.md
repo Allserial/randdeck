@@ -10,6 +10,7 @@
 - 修复 CSV 标签与数值往返导入、根数组 JSON 导入及密集骰子结果裁切。
 - 主窗关闭前完成保存并退出全部窗口；展示窗新增拖动入口，保留鼠标穿透，同步初始模式、主题、动态与粒子偏好，窗口标题随语言切换。
 - 发布门禁校验完整检查明细和原生证据哈希；便携包内附依赖许可证清单，发布清单更新后自动重建并核验 SHA256 校验文件。
+- 将 Zod 固定到 4.6.6，修复 GHSA-mrhx-c7xc-m3w5 涉及的大集合校验内存耗尽漏洞。
 
 ### English
 
@@ -19,6 +20,7 @@
 - Fixed CSV value/tag round trips, root-array JSON imports, and clipped numbers in dense dice layouts.
 - The main window saves before closing all application windows. The display now provides a drag handle, preserves click-through, synchronizes mode and appearance preferences, and updates its localized title.
 - Release gates now require complete check details and matching native evidence hashes. Portable bundles include dependency license reports, and updated manifests regenerate and verify upload checksums.
+- Pinned Zod to 4.6.6 to address oversized-collection memory exhaustion (GHSA-mrhx-c7xc-m3w5).
 
 ## 0.7.0 - 2026-10-25
 

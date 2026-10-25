@@ -60,19 +60,51 @@ function watch(page) {
 
 async function instrumentIpc(page) {
   await page.evaluate(() => {
-    if (window.__randdeckRuntimeSmoke) return;
+    if (window.__randdeckRuntimeSmoke?.transport === "fetch") return;
     const internals = window.__TAURI_INTERNALS__;
     if (!internals?.invoke) throw new Error("Real Tauri IPC is unavailable");
-    const trace = window.__randdeckRuntimeSmoke = { calls: [] };
-    const invoke = internals.invoke;
-    internals.invoke = async function (command, args, options) {
-      const record = { command, args: command.startsWith("plugin:window|") ? args : undefined, completed: false };
+    // Tauri 2.11.5 defines invoke/ipc/postMessage as read-only. Its native
+    // ipc-protocol.js calls the writable global fetch for the custom protocol.
+    const trace = window.__randdeckRuntimeSmoke = { transport: "fetch", calls: [] };
+    const originalFetch = window.fetch;
+    const observedFetch = async function (input, options) {
+      const address = typeof input === "string" ? input : input instanceof URL ? input.href : input?.url;
+      let command;
+      try {
+        const url = new URL(address);
+        if (url.protocol === "ipc:" || ((url.protocol === "http:" || url.protocol === "https:") && url.hostname === "ipc.localhost")) {
+          command = decodeURIComponent(url.pathname.replace(/^\//, ""));
+        }
+      } catch { /* Non-IPC fetch inputs pass through unchanged. */ }
+      if (!command) return Reflect.apply(originalFetch, this, [input, options]);
+      const record = { command, completed: false };
+      // Never inspect request headers or the invoke key. Only window commands
+      // expose their small argument objects; store/event payloads remain private.
+      if (command.startsWith("plugin:window|")) {
+        try {
+          const body = options?.body;
+          const text = typeof body === "string" ? body
+            : body instanceof ArrayBuffer ? new TextDecoder().decode(body)
+              : ArrayBuffer.isView(body) ? new TextDecoder().decode(body) : undefined;
+          if (text !== undefined) record.args = JSON.parse(text);
+        } catch (error) { record.argsParseError = String(error?.message || error); }
+      }
       trace.calls.push(record);
       try {
-        const value = await Reflect.apply(invoke, this, [command, args, options]);
+        const response = await Reflect.apply(originalFetch, this, [input, options]);
+        // Match the local native protocol implementation, not HTTP status alone.
+        record.tauriResponse = response.headers.get("Tauri-Response");
+        record.succeeded = record.tauriResponse === "ok";
+        if (!record.succeeded) {
+          try {
+            const copy = response.clone();
+            const contentType = (copy.headers.get("content-type") || "").split(",")[0];
+            const data = contentType === "application/json" ? await copy.json() : await copy.text();
+            record.error = typeof data === "string" ? data : JSON.stringify(data);
+          } catch (error) { record.error = `Could not inspect IPC error response: ${String(error?.message || error)}`; }
+        }
         record.completed = true;
-        record.succeeded = true;
-        return value;
+        return response;
       } catch (error) {
         record.completed = true;
         record.succeeded = false;
@@ -80,6 +112,8 @@ async function instrumentIpc(page) {
         throw error;
       }
     };
+    window.fetch = observedFetch;
+    if (window.fetch !== observedFetch) throw new Error("The IPC fetch observer could not be installed");
   });
 }
 
@@ -299,6 +333,9 @@ try {
   await check("ui-generation", async () => {
     await settings();
     await main.getByRole("button", { name: "简体中文", exact: true }).click();
+    await until(async () => (await main.evaluate(() => window.__randdeckRuntimeSmoke.calls)).some((call) =>
+      call.command === "plugin:window|set_title" && call.args?.label === "main" && call.succeeded
+    ), "The fetch observer did not capture the real Settings native title setter");
     await selectMotion("即时");
     await selectTheme("标准墨蓝");
     await main.getByLabel("主导航").getByRole("button", { name: "抽取台", exact: true }).click();
