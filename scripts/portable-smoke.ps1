@@ -32,6 +32,8 @@ $report = [ordered]@{
   stateRestored = $false
   restoredHashes = $null
   isolatedWebViewProfiles = $true
+  temporaryDirectoryRemoved = $false
+  cleanupAttempts = 0
   runs = @()
   passed = $false
   error = $null
@@ -140,11 +142,24 @@ try {
     if (Test-Path -LiteralPath $tempRoot) {
       $resolved = (Resolve-Path -LiteralPath $tempRoot).Path
       if (!$resolved.StartsWith("$tempBase\", [System.StringComparison]::OrdinalIgnoreCase) -or [System.IO.Path]::GetFileName($resolved) -notlike "zhishutai-portable-smoke-*") { throw "临时目录越界：$resolved" }
-      Remove-Item -LiteralPath $resolved -Recurse -Force
+      # WebView2 may release its profile handles shortly after the owned EXE exits.
+      # Retry deletion of this already-validated private directory; never kill
+      # unrelated WebView2 processes to obtain a clean test result.
+      foreach ($attempt in 1..20) {
+        $report.cleanupAttempts = $attempt
+        try {
+          if (Test-Path -LiteralPath $resolved) { Remove-Item -LiteralPath $resolved -Recurse -Force }
+          break
+        } catch {
+          if ($attempt -eq 20) { throw }
+          Start-Sleep -Milliseconds 500
+        }
+      }
     }
+    $report.temporaryDirectoryRemoved = !(Test-Path -LiteralPath $tempRoot)
   } catch { $report.error = @($report.error, $_.Exception.Message | Where-Object { $_ }) -join "; " }
   $report.runs = $runs
-  $report.passed = !$report.error -and $report.stateRestored -and $runs.Count -eq 2 -and @($runs | Where-Object { !$_.started -or !$_.onlyExecutablePresent }).Count -eq 0
+  $report.passed = !$report.error -and $report.stateRestored -and $report.temporaryDirectoryRemoved -and $runs.Count -eq 2 -and @($runs | Where-Object { !$_.started -or !$_.onlyExecutablePresent }).Count -eq 0
   if (Test-Path -LiteralPath (Split-Path -Parent $reportPath)) {
     $report | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath $reportPath -Encoding UTF8
   }
