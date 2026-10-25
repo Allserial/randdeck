@@ -39,19 +39,21 @@ export function parsePoolImport(text: string, filename: string): PoolEntry[] {
   const header = csv.data[0].map((cell) => cell.trim().toLowerCase());
   const valueColumn = header.findIndex((cell) => cell === "数字" || cell === "value");
   const tagsColumn = header.findIndex((cell) => cell === "标签" || cell === "tags");
+  const encodingColumn = header.findIndex((cell) => cell === "标签编码" || cell === "tagsencoding");
+  if (encodingColumn >= 0 && tagsColumn < 0) throw runtimeError("errors.poolImportFormat");
   const parseValue = (cell: string | undefined, row: number) => {
     if (cell === undefined || !/^[+-]?\d+$/.test(cell.trim()) || !Number.isSafeInteger(Number(cell))) {
       throw runtimeError("errors.rowInvalid", { row });
     }
     return Number(cell);
   };
-  const parseTags = (cell: string | undefined, row: number): string[] => {
-    if (!cell) return [];
-    if (!cell.trimStart().startsWith("[")) return cell.split("|");
+  const parseTags = (cell: string | undefined, encoding: string | undefined, row: number): string[] => {
+    if (encodingColumn < 0) return cell ? cell.split("|") : [];
+    if (encoding !== "json-array-v1") throw runtimeError("errors.rowInvalid", { row });
     try {
-      const tags: unknown = JSON.parse(cell);
+      const tags: unknown = JSON.parse(cell ?? "");
       if (Array.isArray(tags) && tags.every((tag) => typeof tag === "string")) return tags;
-    } catch { /* Array-shaped cells must contain a valid JSON string array. */ }
+    } catch { /* Explicitly encoded cells must contain a valid JSON string array. */ }
     throw runtimeError("errors.rowInvalid", { row });
   };
   // Numeric-only CSV is retained for simple pools; tagged files require named columns.
@@ -63,11 +65,11 @@ export function parsePoolImport(text: string, filename: string): PoolEntry[] {
     if (row.length !== header.length) throw runtimeError("errors.rowInvalid", { row: index + 2 });
     return {
       value: parseValue(row[valueColumn], index + 2),
-      tags: tagsColumn < 0 ? [] : parseTags(row[tagsColumn], index + 2),
+      tags: tagsColumn < 0 ? [] : parseTags(row[tagsColumn], row[encodingColumn], index + 2),
     };
   }));
 }
 
 export function exportPoolCsv(entries: PoolEntry[]): string {
-  return `\uFEFF${Papa.unparse(entries.map((entry) => ({ 数字: entry.value, 标签: JSON.stringify(entry.tags) })))}`;
+  return `\uFEFF${Papa.unparse(entries.map((entry) => ({ 数字: entry.value, 标签: JSON.stringify(entry.tags), 标签编码: "json-array-v1" })))}`;
 }
