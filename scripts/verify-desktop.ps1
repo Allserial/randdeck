@@ -25,6 +25,16 @@ $application = $null
 $reopened = $null
 $report = [ordered]@{ version=$Version; baselineBackup=$backup; baselineHashes=$before; stateFileCount=$before.Count; applicationClosed=$false; reopened=$false; stateRestored=$false; restoredHashes=$null; passed=$false; error=$null }
 try {
+  # Use fresh disposable application state, independent of the user's draw pool.
+  # The complete baseline remains in the persistent backup and is restored below.
+  if ($existed) {
+    foreach ($name in $before.Keys) {
+      if ((Get-FileHash -LiteralPath (Join-Path $backup $name) -Algorithm SHA256).Hash -ne $before[$name]) { throw 'Application data backup hash mismatch.' }
+    }
+    $expected = [System.IO.Path]::GetFullPath((Join-Path ([Environment]::GetFolderPath('ApplicationData')) 'com.zhishutai.desktop'))
+    if ($appData -ne $expected -or (Get-Item -LiteralPath $appData).Attributes -band [System.IO.FileAttributes]::ReparsePoint) { throw 'Unsafe application data path.' }
+    Remove-Item -LiteralPath $appData -Recurse -Force
+  }
   $env:WEBVIEW2_USER_DATA_FOLDER = Join-Path $session 'webview-profile'
   $env:WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS = "--remote-debugging-port=$Port --remote-debugging-address=127.0.0.1 --no-first-run"
   $env:TAURI_CDP_URL = "http://127.0.0.1:$Port"
