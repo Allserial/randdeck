@@ -1,5 +1,5 @@
 ﻿param(
-  [string]$Version = "0.7.1",
+  [string]$Version = "0.7.2",
   [string]$InstallerPath = "",
   [string]$PreviousInstallerPath = ""
 )
@@ -134,7 +134,7 @@ $report = [ordered]@{
   windowsSandboxAvailable = Test-Path -LiteralPath (Join-Path $env:WINDIR "System32\WindowsSandbox.exe")
   installerSha256 = (Get-FileHash -LiteralPath $installer -Algorithm SHA256).Hash.ToLowerInvariant()
   previousInstaller = [ordered]@{
-    path = "releases\0.5.0\installer\掷数台-离线安装版-setup.exe"
+    path = if ($previousInstaller.StartsWith("$root\", [System.StringComparison]::OrdinalIgnoreCase)) { $previousInstaller.Substring($root.Length + 1) } else { [System.IO.Path]::GetFileName($previousInstaller) }
     bytes = (Get-Item -LiteralPath $previousInstaller).Length
     sha256 = (Get-FileHash -LiteralPath $previousInstaller -Algorithm SHA256).Hash.ToLowerInvariant()
     deltaBytes = (Get-Item -LiteralPath $installer).Length - (Get-Item -LiteralPath $previousInstaller).Length
@@ -180,8 +180,9 @@ try {
   }
 
   $report.previousInstallExitCode = Invoke-Installer $previousInstaller $installDir
-  $previousExe = Get-Item -LiteralPath (Join-Path $installDir "zhishutai.exe") -ErrorAction SilentlyContinue
-  if (!$previousExe) { throw "v0.5.0 安装后未找到 zhishutai.exe" }
+  $previousExe = Get-Item -LiteralPath (Join-Path $installDir "RandDeck.exe") -ErrorAction SilentlyContinue
+  if (!$previousExe) { $previousExe = Get-Item -LiteralPath (Join-Path $installDir "zhishutai.exe") -ErrorAction SilentlyContinue }
+  if (!$previousExe) { throw "旧版安装后未找到 RandDeck.exe 或 zhishutai.exe" }
   $report.previousExecutable = $previousExe.Name
   $report.previousWindowTitle = Invoke-AppSmoke $previousExe.FullName $installDir
   $report.previousLaunched = [bool]$report.previousWindowTitle

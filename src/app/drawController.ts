@@ -189,7 +189,7 @@ function startCeremonyReveal(
 function runGeneration(countOverride?: number, partial?: PartialDrawContext, shuffle = false): Promise<string | null> {
   if (activeGeneration) return activeGeneration;
   const store = useAppStore.getState();
-  if (activeCountdown || store.isDrawing || store.ceremony.phase !== "idle") return Promise.resolve(null);
+  if (store.isClosing || activeCountdown || store.isDrawing || store.ceremony.phase !== "idle") return Promise.resolve(null);
   const generation = ++operationGeneration;
   const pending = (async () => {
     store.setError("");
@@ -351,7 +351,7 @@ export function rerollDraw(indices: number[]): Promise<string | null> {
 // 倒计时后生成仪式系统（Item 3, 7）
 export async function startCountdownCeremony(seconds: number): Promise<void> {
   const store = useAppStore.getState();
-  if (activeCountdown || activeGeneration || store.isDrawing || store.ceremony.phase !== "idle") return;
+  if (store.isClosing || activeCountdown || activeGeneration || store.isDrawing || store.ceremony.phase !== "idle") return;
   const context = pinnedGenerationContext();
   if (!context) return;
   const generation = ++operationGeneration;

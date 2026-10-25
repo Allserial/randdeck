@@ -1,5 +1,19 @@
 # 更新日志 (Changelog)
 
+## 0.7.2 - 2026-10-25
+
+### 中文
+
+- 修复关闭等待保存期间仍接受新修改或抽取，导致最新状态可能未落盘即退出的竞态。关闭期间暂停编辑、取消未提交的抽取并等待保存队列稳定；保存或关闭失败后恢复编辑。
+- 发布门禁严格检查完整且唯一的原生检查集合、各项通过状态、错误数组和正式 EXE 哈希，拒绝缺失或内部矛盾的通过报告。
+- 依赖许可证清单覆盖锁文件全部 npm 直接与传递解析条目，明确开发、可选平台与安装状态，并在发布前校验元数据一致性。
+
+### English
+
+- Prevented edits and late draws from racing the final save during native shutdown. Closing freezes persistent actions, cancels unfinished draws, and drains a stable save queue; failures restore editing.
+- Release gates now require the complete, unique native-check set, passing child checks, empty error arrays, and the actual release executable hash.
+- Dependency license reports now inventory all locked npm direct and transitive packages, including development and optional-platform entries, with metadata validation before publication.
+
 ## 0.7.1 - 2026-10-25
 
 ### 中文
