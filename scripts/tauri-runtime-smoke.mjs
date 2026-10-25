@@ -167,7 +167,7 @@ const clickThrough = () => main.locator(".display-settings label.setting-toggle 
 const particleToggle = () => main.locator("label.ceremony-toggle").filter({ hasText: "仪式粒子效果" }).locator("input");
 
 async function openDisplay() {
-  await main.getByRole("button", { name: "打开展示窗口", exact: true }).click();
+  await main.locator(".display-settings").getByRole("button", { name: "打开展示窗口", exact: true }).click();
   display = await until(() => browser.contexts()[0].pages().find((page) => isDisplay(page) && !page.isClosed()), "Display WebView was not created");
   watch(display);
   await display.locator(".display-view").waitFor();

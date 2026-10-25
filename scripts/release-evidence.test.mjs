@@ -57,7 +57,9 @@ function runGuard(current) {
 function runPowerShell(command) {
   const environment = { ...process.env };
   // Do not inject PowerShell 7 module paths into Windows PowerShell 5.1.
-  delete environment.PSModulePath;
+  for (const key of Object.keys(environment)) {
+    if (key.toLowerCase() === 'psmodulepath') delete environment[key];
+  }
   return spawnSync('powershell.exe', ['-NoLogo', '-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-Command', command], {
     encoding: 'utf8', timeout: 20_000, windowsHide: true, env: environment,
   });
