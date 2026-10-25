@@ -186,7 +186,6 @@ export async function listenDisplayState(callback: (payload: DisplayPayload) => 
   channel.addEventListener("message", listener);
   channel.postMessage({ type: "ready" } satisfies BrowserDisplayMessage);
   return () => {
-    channel.postMessage({ type: "close" } satisfies BrowserDisplayMessage);
     channel.removeEventListener("message", listener);
     channel.close();
   };
