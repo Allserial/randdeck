@@ -115,10 +115,19 @@ finally {
     $nativePath = Join-Path $output 'runtime-smoke.json'
     if ($application -and (Test-Path -LiteralPath $nativePath -PathType Leaf)) {
       $nativeReport = Get-Content -LiteralPath $nativePath -Raw -Encoding UTF8 | ConvertFrom-Json
+      # PS 7 materializes JSON timestamps as DateTime. Parsing that object again
+      # first formats it in the current culture, losing Kind and fractional
+      # seconds; cast typed timestamps directly to preserve their real instant.
+      $generatedAtValue = $nativeReport.generatedAt
+      if ($generatedAtValue -is [DateTimeOffset]) { $nativeGeneratedAt = $generatedAtValue }
+      elseif ($generatedAtValue -is [DateTime] -and $generatedAtValue.Kind -ne [DateTimeKind]::Unspecified) { $nativeGeneratedAt = [DateTimeOffset]$generatedAtValue }
+      elseif ($generatedAtValue -is [string] -and $generatedAtValue -cmatch '^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,7})?(?:Z|[+-]\d{2}:\d{2})$') {
+        $nativeGeneratedAt = [DateTimeOffset]::Parse($generatedAtValue, [Globalization.CultureInfo]::InvariantCulture, [Globalization.DateTimeStyles]::None)
+      } else { throw 'Native report generatedAt must be a timestamp with an explicit time zone.' }
       $belongsToSession = $nativeReport.sessionId -is [string] -and $nativeReport.sessionId -ceq $sessionId `
         -and $nativeReport.sourceCommit -ceq $sourceCommit -and $nativeReport.executableSha256 -ceq $executableSha256 `
         -and $nativeReport.processId -eq $application.Id `
-        -and [DateTimeOffset]::Parse($nativeReport.generatedAt) -ge $sessionStartedAt
+        -and $nativeGeneratedAt -ge $sessionStartedAt
       if ($belongsToSession) {
         $seal = [pscustomobject]@{ savedStateMatched=[bool]$report.savedStateMatched; reopenedStateMatched=[bool]$report.reopenedStateMatched;
           stateRestored=[bool]$report.stateRestored; applicationClosed=[bool]$report.applicationClosed;
